@@ -1,6 +1,6 @@
 import {
   binaryFromCommand,
-  eventId as makeEventId,
+  eventId,
   hash,
   isVerificationCommand,
   textSummary
@@ -8,21 +8,22 @@ import {
 
 const runqVersion = '0.1.0';
 
-function eventId(input, eventType, now) {
-  return makeEventId([input.session_id, eventType, input.tool_use_id ?? '', now]);
+function sessionId(input) {
+  return input.session_id ?? input['turn-id'] ?? input.turn_id ?? 'codex-session-unknown';
 }
 
 function baseEvent(input, eventType, now, privacyLevel, payload) {
+  const resolvedSessionId = sessionId(input);
   return {
     runq_version: runqVersion,
-    event_id: eventId(input, eventType, now),
+    event_id: eventId([resolvedSessionId, eventType, input.tool_use_id ?? input['turn-id'] ?? '', now]),
     schema_version: runqVersion,
     event_type: eventType,
     timestamp: now,
-    session_id: input.session_id,
-    run_id: input.session_id,
-    framework: 'claude_code',
-    source: 'hook',
+    session_id: resolvedSessionId,
+    run_id: input.run_id ?? resolvedSessionId,
+    framework: 'codex',
+    source: input.hook_event_name ? 'hook' : 'import',
     repo: input.cwd ? {
       id: hash(input.cwd),
       root_hash: hash(input.cwd),
@@ -36,26 +37,33 @@ function baseEvent(input, eventType, now, privacyLevel, payload) {
   };
 }
 
+function isShellTool(toolName) {
+  return ['shell', 'bash', 'exec', 'command'].includes(String(toolName ?? '').toLowerCase());
+}
+
+function commandFromInput(input) {
+  return input.tool_input?.command ?? input.tool_input?.cmd ?? input.command ?? '';
+}
+
 function sessionStarted(input, now) {
   return baseEvent(input, 'session.started', now, 'metadata', {
-    agent_name: 'Claude Code',
+    agent_name: 'Codex',
     model: input.model ?? 'unknown',
-    started_reason: input.source ?? 'unknown',
-    permission_mode: input.permission_mode ?? 'unknown',
-    transcript_path_hash: hash(input.transcript_path)
+    started_reason: input.source ?? 'startup',
+    agent_type: input.agent_type ?? 'default'
   });
 }
 
 function sessionEnded(input, now) {
   return baseEvent(input, 'session.ended', now, 'metadata', {
-    ended_reason: input.reason ?? input.source ?? 'unknown',
-    permission_mode: input.permission_mode ?? 'unknown',
-    transcript_path_hash: hash(input.transcript_path)
+    ended_reason: input.reason ?? input.type ?? 'unknown',
+    last_assistant_message_hash: hash(input['last-assistant-message'] ?? input.last_assistant_message),
+    input_messages_count: Array.isArray(input['input-messages']) ? input['input-messages'].length : undefined
   });
 }
 
 function userPromptSubmitted(input, now) {
-  const prompt = input.prompt ?? '';
+  const prompt = input.prompt ?? input.input ?? '';
   return baseEvent(input, 'user.prompt.submitted', now, 'summary', {
     prompt_hash: hash(prompt),
     prompt_summary: textSummary(prompt),
@@ -63,8 +71,8 @@ function userPromptSubmitted(input, now) {
   });
 }
 
-function bashCommandStarted(input, now) {
-  const command = input.tool_input?.command ?? '';
+function commandStarted(input, now) {
+  const command = commandFromInput(input);
   return baseEvent(input, 'command.started', now, 'metadata', {
     command_id: input.tool_use_id ?? hash(command),
     command_kind: 'shell',
@@ -76,11 +84,10 @@ function bashCommandStarted(input, now) {
   });
 }
 
-function bashCommandEnded(input, now) {
-  const command = input.tool_input?.command ?? '';
+function commandEnded(input, now) {
+  const command = commandFromInput(input);
   const response = input.tool_response ?? {};
-  const interrupted = response.interrupted === true;
-  const exitCode = interrupted || response.error ? 1 : 0;
+  const exitCode = Number.isInteger(response.exit_code) ? response.exit_code : response.error ? 1 : 0;
   return baseEvent(input, 'command.ended', now, 'metadata', {
     command_id: input.tool_use_id ?? hash(command),
     command_kind: 'shell',
@@ -98,7 +105,7 @@ function bashCommandEnded(input, now) {
 function toolStarted(input, now) {
   return baseEvent(input, 'tool.call.started', now, 'metadata', {
     tool_name: input.tool_name ?? 'unknown',
-    tool_type: 'claude_code_tool',
+    tool_type: 'codex_tool',
     tool_call_id: input.tool_use_id ?? hash(JSON.stringify(input.tool_input ?? {}))
   });
 }
@@ -106,32 +113,31 @@ function toolStarted(input, now) {
 function toolEnded(input, now) {
   return baseEvent(input, 'tool.call.ended', now, 'metadata', {
     tool_name: input.tool_name ?? 'unknown',
-    tool_type: 'claude_code_tool',
+    tool_type: 'codex_tool',
     tool_call_id: input.tool_use_id ?? hash(JSON.stringify(input.tool_input ?? {})),
     status: input.tool_response?.success === false ? 'error' : 'ok'
   });
 }
 
-export function normalizeClaudeCodeHook(input, options = {}) {
+export function normalizeCodexHook(input, options = {}) {
   const now = options.now ?? new Date().toISOString();
+
+  if (input.type === 'agent-turn-complete') {
+    return [sessionEnded(input, now)];
+  }
 
   switch (input.hook_event_name) {
     case 'SessionStart':
       return [sessionStarted(input, now)];
     case 'SessionEnd':
+    case 'Stop':
       return [sessionEnded(input, now)];
     case 'UserPromptSubmit':
       return [userPromptSubmitted(input, now)];
     case 'PreToolUse':
-      if (input.tool_name === 'Bash') {
-        return [bashCommandStarted(input, now)];
-      }
-      return [toolStarted(input, now)];
+      return isShellTool(input.tool_name) ? [commandStarted(input, now)] : [toolStarted(input, now)];
     case 'PostToolUse':
-      if (input.tool_name === 'Bash') {
-        return [bashCommandEnded(input, now)];
-      }
-      return [toolEnded(input, now)];
+      return isShellTool(input.tool_name) ? [commandEnded(input, now)] : [toolEnded(input, now)];
     default:
       return [];
   }

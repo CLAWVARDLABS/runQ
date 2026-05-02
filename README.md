@@ -52,10 +52,13 @@ npm test
 
 ## Initial Integrations
 
-Planned adapters:
+Current adapters:
 
 - Claude Code
 - Codex
+
+Planned adapters:
+
 - OpenClaw
 - Hermes
 
