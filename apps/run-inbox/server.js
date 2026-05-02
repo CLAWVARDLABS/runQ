@@ -2,6 +2,7 @@
 import http from 'node:http';
 
 import { RunqStore } from '../../src/store.js';
+import { scoreRun } from '../../src/scoring.js';
 
 function sendJson(response, status, body) {
   response.writeHead(status, {
@@ -74,6 +75,16 @@ function htmlShell() {
         font-size: 12px;
         margin-top: 4px;
       }
+      .score {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 3px 8px;
+        margin-top: 8px;
+        font-size: 12px;
+        background: #eef4ff;
+        color: #1d4ed8;
+      }
       .event {
         border-left: 3px solid #2d6cdf;
         padding: 10px 12px;
@@ -122,7 +133,10 @@ function htmlShell() {
         root.innerHTML = '';
         for (const session of sessions) {
           const button = document.createElement('button');
-          button.innerHTML = '<strong>' + session.session_id + '</strong><div class="meta">' + session.framework + ' · ' + session.event_count + ' events · ' + session.last_event_at + '</div>';
+          const quality = session.quality || {};
+          const confidence = Math.round((quality.outcome_confidence || 0) * 100);
+          const reasons = (quality.reasons || []).join(', ') || 'no flags';
+          button.innerHTML = '<strong>' + session.session_id + '</strong><div class="meta">' + session.framework + ' · ' + session.event_count + ' events · ' + session.last_event_at + '</div><div class="score">Outcome ' + confidence + '%</div><div class="meta">' + reasons + '</div>';
           button.addEventListener('click', () => loadTimeline(session.session_id));
           root.appendChild(button);
         }
@@ -157,7 +171,10 @@ export function handleRunInboxRequest({ dbPath }, request, response) {
 
     if (request.method === 'GET' && url.pathname === '/api/sessions') {
       const store = new RunqStore(dbPath);
-      const sessions = store.listSessions();
+      const sessions = store.listSessions().map((session) => ({
+        ...session,
+        quality: scoreRun(store.listEventsForSession(session.session_id))
+      }));
       store.close();
       sendJson(response, 200, sessions);
       return;
