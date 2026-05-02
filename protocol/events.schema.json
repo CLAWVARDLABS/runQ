@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://runq.dev/schemas/event-envelope-0.1.0.json",
+  "title": "RunQ Event Envelope",
+  "description": "RunQ v0 event envelope for coding-agent run quality telemetry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "runq_version",
+    "event_id",
+    "schema_version",
+    "event_type",
+    "timestamp",
+    "session_id",
+    "run_id",
+    "framework",
+    "source",
+    "privacy",
+    "payload"
+  ],
+  "properties": {
+    "runq_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "event_type": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "parent_id": {
+      "type": ["string", "null"]
+    },
+    "framework": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string"
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "redacted"],
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": ["metadata", "summary", "sensitive", "secret"]
+        },
+        "redacted": {
+          "type": "boolean"
+        },
+        "local_only": {
+          "type": "boolean"
+        }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}
