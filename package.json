@@ -7,6 +7,7 @@
     "runq": "./src/cli.js"
   },
   "scripts": {
+    "inbox": "node apps/run-inbox/server.js",
     "test": "node --test"
   },
   "engines": {

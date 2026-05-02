@@ -44,6 +44,12 @@ List sessions:
 node src/cli.js sessions --db .runq/dev.db
 ```
 
+Open the local Run Inbox:
+
+```bash
+npm run inbox -- --db .runq/dev.db --port 4545
+```
+
 Run tests:
 
 ```bash
