@@ -3,6 +3,7 @@ import http from 'node:http';
 
 import { RunqStore } from '../../src/store.js';
 import { scoreRun } from '../../src/scoring.js';
+import { recommendRunImprovements } from '../../src/recommendations.js';
 
 function sendJson(response, status, body) {
   response.writeHead(status, {
@@ -136,7 +137,9 @@ function htmlShell() {
           const quality = session.quality || {};
           const confidence = Math.round((quality.outcome_confidence || 0) * 100);
           const reasons = (quality.reasons || []).join(', ') || 'no flags';
-          button.innerHTML = '<strong>' + session.session_id + '</strong><div class="meta">' + session.framework + ' · ' + session.event_count + ' events · ' + session.last_event_at + '</div><div class="score">Outcome ' + confidence + '%</div><div class="meta">' + reasons + '</div>';
+          const recommendation = (session.recommendations || [])[0];
+          const recommendationText = recommendation ? recommendation.title : 'No recommendation yet';
+          button.innerHTML = '<strong>' + session.session_id + '</strong><div class="meta">' + session.framework + ' · ' + session.event_count + ' events · ' + session.last_event_at + '</div><div class="score">Outcome ' + confidence + '%</div><div class="meta">' + reasons + '</div><div class="meta">' + recommendationText + '</div>';
           button.addEventListener('click', () => loadTimeline(session.session_id));
           root.appendChild(button);
         }
@@ -171,10 +174,14 @@ export function handleRunInboxRequest({ dbPath }, request, response) {
 
     if (request.method === 'GET' && url.pathname === '/api/sessions') {
       const store = new RunqStore(dbPath);
-      const sessions = store.listSessions().map((session) => ({
-        ...session,
-        quality: scoreRun(store.listEventsForSession(session.session_id))
-      }));
+      const sessions = store.listSessions().map((session) => {
+        const events = store.listEventsForSession(session.session_id);
+        return {
+          ...session,
+          quality: scoreRun(events),
+          recommendations: recommendRunImprovements(events)
+        };
+      });
       store.close();
       sendJson(response, 200, sessions);
       return;
