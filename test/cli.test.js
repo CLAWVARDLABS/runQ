@@ -79,3 +79,41 @@ test('CLI prints an error for unknown commands', () => {
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Unknown command: unknown/);
 });
+
+test('CLI exports a session bundle as JSON', () => {
+  const dir = tempDir();
+  const dbPath = join(dir, 'runq.db');
+  const eventsPath = join(dir, 'events.json');
+  writeFileSync(eventsPath, JSON.stringify([
+    makeEvent('evt_cli_1', 'session.started', '2026-05-02T10:00:00.000Z'),
+    makeEvent('evt_cli_2', 'session.ended', '2026-05-02T10:05:00.000Z')
+  ]));
+
+  const ingest = spawnSync(process.execPath, [
+    cliPath,
+    'ingest',
+    eventsPath,
+    '--db',
+    dbPath
+  ], {
+    encoding: 'utf8'
+  });
+  assert.equal(ingest.status, 0, ingest.stderr);
+
+  const exported = spawnSync(process.execPath, [
+    cliPath,
+    'export',
+    'ses_cli_1',
+    '--db',
+    dbPath
+  ], {
+    encoding: 'utf8'
+  });
+
+  assert.equal(exported.status, 0, exported.stderr);
+  const bundle = JSON.parse(exported.stdout);
+  assert.equal(bundle.session_id, 'ses_cli_1');
+  assert.equal(bundle.events.length, 2);
+  assert.equal(bundle.quality.outcome_confidence >= 0, true);
+  assert.equal(Array.isArray(bundle.recommendations), true);
+});

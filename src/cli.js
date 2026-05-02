@@ -2,6 +2,8 @@
 import { readFileSync } from 'node:fs';
 
 import { RunqStore } from './store.js';
+import { scoreRun } from './scoring.js';
+import { recommendRunImprovements } from './recommendations.js';
 
 function parseDbPath(args) {
   const dbIndex = args.indexOf('--db');
@@ -36,6 +38,7 @@ function printUsage() {
 Usage:
   runq ingest <events.json> --db <path>
   runq sessions --db <path>
+  runq export <session_id> --db <path>
 `);
 }
 
@@ -71,6 +74,27 @@ export function main(argv = process.argv.slice(2)) {
     const sessions = store.listSessions();
     store.close();
     console.log(JSON.stringify(sessions, null, 2));
+    return 0;
+  }
+
+  if (command === 'export') {
+    const [sessionId] = args;
+    if (!sessionId) {
+      console.error('Missing session id');
+      return 1;
+    }
+
+    const store = new RunqStore(dbPath);
+    const events = store.listEventsForSession(sessionId);
+    store.close();
+    console.log(JSON.stringify({
+      runq_version: '0.1.0',
+      exported_at: new Date().toISOString(),
+      session_id: sessionId,
+      events,
+      quality: scoreRun(events),
+      recommendations: recommendRunImprovements(events)
+    }, null, 2));
     return 0;
   }
 

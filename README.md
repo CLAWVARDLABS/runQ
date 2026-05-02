@@ -32,6 +32,12 @@ RunQ focuses on that question.
 
 ## Quick Start
 
+Local alpha setup:
+
+```bash
+bash scripts/install-local.sh
+```
+
 Ingest the sample session:
 
 ```bash

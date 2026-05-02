@@ -42,6 +42,30 @@
     "runq_version": "0.1.0",
     "event_id": "evt_basic_003",
     "schema_version": "0.1.0",
+    "event_type": "file.changed",
+    "timestamp": "2026-05-02T10:01:30.000Z",
+    "session_id": "ses_basic_001",
+    "run_id": "run_basic_001",
+    "framework": "claude_code",
+    "source": "hook",
+    "privacy": {
+      "level": "summary",
+      "redacted": true
+    },
+    "payload": {
+      "file_path_hash": "sha256:example-file",
+      "file_extension": ".js",
+      "change_kind": "modified",
+      "lines_added": 24,
+      "lines_removed": 3,
+      "language": "javascript",
+      "is_test_file": false
+    }
+  },
+  {
+    "runq_version": "0.1.0",
+    "event_id": "evt_basic_004",
+    "schema_version": "0.1.0",
     "event_type": "command.ended",
     "timestamp": "2026-05-02T10:02:00.000Z",
     "session_id": "ses_basic_001",
@@ -63,7 +87,7 @@
   },
   {
     "runq_version": "0.1.0",
-    "event_id": "evt_basic_004",
+    "event_id": "evt_basic_005",
     "schema_version": "0.1.0",
     "event_type": "outcome.scored",
     "timestamp": "2026-05-02T10:04:30.000Z",
@@ -83,12 +107,12 @@
       "loop_risk": 0.05,
       "cost_efficiency": 0.5,
       "score_version": "0.1.0",
-      "evidence_event_ids": ["evt_basic_003"]
+      "evidence_event_ids": ["evt_basic_004"]
     }
   },
   {
     "runq_version": "0.1.0",
-    "event_id": "evt_basic_005",
+    "event_id": "evt_basic_006",
     "schema_version": "0.1.0",
     "event_type": "session.ended",
     "timestamp": "2026-05-02T10:05:00.000Z",
