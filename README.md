@@ -51,6 +51,18 @@ npm run harness:openclaw -- --scenario verified-success --db .runq/openclaw-harn
 npm run harness:openclaw -- --scenario repeated-test-failure --db .runq/openclaw-harness.db
 ```
 
+Run multiple product-test agents and ingest them into one Run Inbox database:
+
+```bash
+npm run agent-manager -- --mode local --db .runq/agent-manager.db --out .runq/agent-manager
+```
+
+Use Docker-backed test agents:
+
+```bash
+npm run agent-manager -- --mode docker --db .runq/agent-manager.db --out .runq/agent-manager
+```
+
 List sessions:
 
 ```bash

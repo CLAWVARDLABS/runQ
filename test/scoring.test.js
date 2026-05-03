@@ -87,3 +87,40 @@ test('scoreRun detects command loops from repeated failing commands', () => {
   assert.equal(score.outcome_confidence, 0.25);
   assert.equal(score.reasons.includes('repeated_command_failure'), true);
 });
+
+test('scoreRun raises confidence when the run has an accepted satisfaction signal', () => {
+  const score = scoreRun([
+    event('session.started'),
+    event('model.call.ended', {
+      provider: 'clawvard-token',
+      model: 'MiniMax-M2.7',
+      total_tokens: 18976
+    }),
+    event('session.ended', { ended_reason: 'agent_end', success: true }),
+    event('satisfaction.recorded', {
+      label: 'accepted',
+      signal: 'smoke_test_exact_reply',
+      confidence: 0.95
+    })
+  ]);
+
+  assert.equal(score.outcome_confidence, 0.85);
+  assert.equal(score.rework_risk, 0.2);
+  assert.equal(score.reasons.includes('satisfaction_accepted'), true);
+});
+
+test('scoreRun lowers confidence when the latest satisfaction signal is abandoned', () => {
+  const score = scoreRun([
+    event('session.started'),
+    event('session.ended', { ended_reason: 'agent_end', success: false }),
+    event('satisfaction.recorded', {
+      label: 'abandoned',
+      signal: 'model request timed out',
+      confidence: 0.9
+    })
+  ]);
+
+  assert.equal(score.outcome_confidence, 0.15);
+  assert.equal(score.rework_risk, 0.85);
+  assert.equal(score.reasons.includes('satisfaction_abandoned'), true);
+});

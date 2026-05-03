@@ -25,7 +25,8 @@
       "cost_efficiency": 0.5,
       "score_version": "0.1.0",
       "reasons": [
-        "verification_passed_after_changes"
+        "verification_passed_after_changes",
+        "satisfaction_accepted"
       ]
     },
     "recommendation_categories": []

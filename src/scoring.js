@@ -15,6 +15,7 @@ export function scoreRun(events) {
   const passedVerification = verificationCommands.filter((event) => Number(event.payload.exit_code) === 0);
   const permissionEvents = events.filter((event) => event.event_type === 'permission.resolved');
   const sessionEnded = events.find((event) => event.event_type === 'session.ended');
+  const satisfaction = [...events].reverse().find((event) => event.event_type === 'satisfaction.recorded');
 
   let outcomeConfidence = 0.55;
   let verificationCoverage = fileChanges.length > 0 ? 0.2 : 0.5;
@@ -72,6 +73,24 @@ export function scoreRun(events) {
     outcomeConfidence = Math.min(outcomeConfidence, 0.2);
     reworkRisk = Math.max(reworkRisk, 0.8);
     reasons.push('user_interrupted');
+  }
+
+  if (satisfaction?.payload?.label === 'accepted') {
+    outcomeConfidence = Math.max(outcomeConfidence, 0.85);
+    reworkRisk = Math.min(reworkRisk, 0.2);
+    reasons.push('satisfaction_accepted');
+  }
+
+  if (satisfaction?.payload?.label === 'abandoned') {
+    outcomeConfidence = Math.min(outcomeConfidence, 0.15);
+    reworkRisk = Math.max(reworkRisk, 0.85);
+    reasons.push('satisfaction_abandoned');
+  }
+
+  if (satisfaction?.payload?.label === 'needs_review') {
+    outcomeConfidence = Math.min(outcomeConfidence, 0.45);
+    reworkRisk = Math.max(reworkRisk, 0.55);
+    reasons.push('satisfaction_needs_review');
   }
 
   return {

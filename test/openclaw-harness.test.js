@@ -40,10 +40,11 @@ test('OpenClaw harness records repeated failed verification and emits product re
 
   assert.equal(result.session.session_id, 'openclaw-harness-failure');
   assert.equal(result.events.some((event) => event.event_type === 'satisfaction.recorded'), true);
-  assert.equal(result.quality.outcome_confidence, 0.2);
+  assert.equal(result.quality.outcome_confidence, 0.15);
   assert.equal(result.quality.loop_risk, 0.8);
   assert.equal(result.quality.reasons.includes('verification_failed_at_end'), true);
   assert.equal(result.quality.reasons.includes('repeated_command_failure'), true);
+  assert.equal(result.quality.reasons.includes('satisfaction_abandoned'), true);
   assert.equal(result.recommendations.some((recommendation) => recommendation.category === 'verification_strategy'), true);
   assert.equal(result.recommendations.some((recommendation) => recommendation.category === 'loop_prevention'), true);
   assert.equal(result.satisfaction.label, 'abandoned');

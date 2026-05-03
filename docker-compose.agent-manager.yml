@@ -1,0 +1,32 @@
+services:
+  agent-success:
+    build:
+      context: .
+      dockerfile: tools/agent-manager/Dockerfile
+    command:
+      - --scenario
+      - verified-success
+      - --agent-id
+      - agent-success
+      - --out
+      - /out/agent-success-verified-success.json
+      - --now
+      - "2026-05-03T10:00:00.000Z"
+    volumes:
+      - ./.runq/agent-manager:/out
+
+  agent-failure:
+    build:
+      context: .
+      dockerfile: tools/agent-manager/Dockerfile
+    command:
+      - --scenario
+      - repeated-test-failure
+      - --agent-id
+      - agent-failure
+      - --out
+      - /out/agent-failure-repeated-test-failure.json
+      - --now
+      - "2026-05-03T10:00:00.000Z"
+    volumes:
+      - ./.runq/agent-manager:/out

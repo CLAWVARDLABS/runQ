@@ -116,8 +116,9 @@ test('Run Inbox server returns sessions as JSON', () => {
   assert.equal(response.json.length, 1);
   assert.equal(response.json[0].session_id, 'ses_ui_1');
   assert.equal(response.json[0].event_count, 5);
-  assert.equal(response.json[0].quality.outcome_confidence, 0.2);
+  assert.equal(response.json[0].quality.outcome_confidence, 0.15);
   assert.equal(response.json[0].quality.reasons.includes('verification_failed_at_end'), true);
+  assert.equal(response.json[0].quality.reasons.includes('satisfaction_abandoned'), true);
   assert.equal(response.json[0].recommendations.length, 1);
   assert.equal(response.json[0].recommendations[0].category, 'verification_strategy');
   assert.equal(response.json[0].satisfaction.label, 'abandoned');

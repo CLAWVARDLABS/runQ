@@ -17,16 +17,17 @@
       "satisfaction.recorded"
     ],
     "quality": {
-      "outcome_confidence": 0.2,
+      "outcome_confidence": 0.15,
       "verification_coverage": 0.4,
-      "rework_risk": 0.8,
+      "rework_risk": 0.85,
       "permission_friction": 0,
       "loop_risk": 0.8,
       "cost_efficiency": 0.5,
       "score_version": "0.1.0",
       "reasons": [
         "verification_failed_at_end",
-        "repeated_command_failure"
+        "repeated_command_failure",
+        "satisfaction_abandoned"
       ]
     },
     "recommendation_categories": [

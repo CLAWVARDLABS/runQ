@@ -7,6 +7,7 @@
     "runq": "./src/cli.js"
   },
   "scripts": {
+    "agent-manager": "node tools/agent-manager/manager.js",
     "build": "next build",
     "dev": "next dev",
     "harness:openclaw": "node examples/openclaw-harness/run.js",

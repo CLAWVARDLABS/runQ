@@ -94,11 +94,19 @@ function normalize(input, now) {
   return normalizeOpenClawEvent(input, { now });
 }
 
-function verifiedSuccessScenario(baseNow) {
-  const sessionId = 'openclaw-harness-success';
-  const runId = 'run-openclaw-harness-success';
+function scenarioSessionId(baseSessionId, agentId) {
+  return agentId ? `${agentId}-${baseSessionId}` : baseSessionId;
+}
+
+function scenarioRunId(baseRunId, agentId) {
+  return agentId ? `${agentId}-${baseRunId}` : baseRunId;
+}
+
+function verifiedSuccessScenario(baseNow, options = {}) {
+  const sessionId = scenarioSessionId('openclaw-harness-success', options.agentId);
+  const runId = scenarioRunId('run-openclaw-harness-success', options.agentId);
   const ctx = {
-    agentId: 'openclaw-devbot',
+    agentId: options.agentId ?? 'openclaw-devbot',
     sessionId,
     runId,
     workspaceDir: '/repo/app'
@@ -172,11 +180,11 @@ function verifiedSuccessScenario(baseNow) {
   ];
 }
 
-function repeatedFailureScenario(baseNow) {
-  const sessionId = 'openclaw-harness-failure';
-  const runId = 'run-openclaw-harness-failure';
+function repeatedFailureScenario(baseNow, options = {}) {
+  const sessionId = scenarioSessionId('openclaw-harness-failure', options.agentId);
+  const runId = scenarioRunId('run-openclaw-harness-failure', options.agentId);
   const ctx = {
-    agentId: 'openclaw-devbot',
+    agentId: options.agentId ?? 'openclaw-devbot',
     sessionId,
     runId,
     workspaceDir: '/repo/app'
@@ -228,14 +236,18 @@ function repeatedFailureScenario(baseNow) {
   ];
 }
 
-function scenarioEvents(scenario, now) {
+function scenarioEvents(scenario, now, options = {}) {
   if (scenario === 'verified-success') {
-    return verifiedSuccessScenario(now);
+    return verifiedSuccessScenario(now, options);
   }
   if (scenario === 'repeated-test-failure') {
-    return repeatedFailureScenario(now);
+    return repeatedFailureScenario(now, options);
   }
   throw new Error(`Unknown OpenClaw harness scenario: ${scenario}`);
+}
+
+export function createOpenClawHarnessEvents({ scenario, now = new Date().toISOString(), agentId } = {}) {
+  return scenarioEvents(scenario, now, { agentId });
 }
 
 export function runOpenClawHarness({ dbPath, scenario, now = new Date().toISOString() }) {

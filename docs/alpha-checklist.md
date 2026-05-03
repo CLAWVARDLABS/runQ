@@ -38,6 +38,28 @@ Use the output as an early product sanity check:
 - The repeated-test-failure run should emit verification strategy and loop prevention recommendations.
 - Both runs should record a `satisfaction.recorded` event and match their golden product snapshots in tests.
 
+## Agent Manager Check
+
+Before changing Run Inbox UI or scoring logic, run multiple product-test agents into one database:
+
+```bash
+npm run agent-manager -- --mode local --db .runq/agent-manager.db --out .runq/agent-manager
+npm run inbox -- --db .runq/agent-manager.db --port 4545
+```
+
+If Docker is available, also run:
+
+```bash
+npm run agent-manager -- --mode docker --db .runq/agent-manager.db --out .runq/agent-manager
+```
+
+Use the generated sessions to check:
+
+- Multiple agents appear in the Run list.
+- Accepted and abandoned satisfaction labels render correctly.
+- Failed verification and repeated command loop recommendations appear.
+- Sequential ingest avoids SQLite lock errors when agents run concurrently.
+
 ## What To Measure
 
 - Did sessions appear without manual cleanup?
