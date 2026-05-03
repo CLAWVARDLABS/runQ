@@ -44,6 +44,13 @@ Ingest the sample session:
 node src/cli.js ingest examples/sessions/basic-run.json --db .runq/dev.db
 ```
 
+Run the OpenClaw-like product harness:
+
+```bash
+npm run harness:openclaw -- --scenario verified-success --db .runq/openclaw-harness.db
+npm run harness:openclaw -- --scenario repeated-test-failure --db .runq/openclaw-harness.db
+```
+
 List sessions:
 
 ```bash
@@ -68,11 +75,22 @@ Current adapters:
 
 - Claude Code
 - Codex
+- OpenClaw
 
 Planned adapters:
 
-- OpenClaw
 - Hermes
+
+## Product Harnesses
+
+RunQ includes executable harnesses for agent-framework-like event streams. These are not demos; they are regression tests for the product thesis.
+
+The OpenClaw harness produces two deterministic sessions:
+
+- `verified-success`: a coding-agent run changes a file, runs targeted verification, and gets high Outcome Confidence.
+- `repeated-test-failure`: a run changes a file, repeats the same failing verification command, and gets verification and loop-prevention recommendations.
+
+Use these harnesses when adding new metrics, adapters, or recommendations so quality scoring changes remain explainable.
 
 ## Relationship To OpenTelemetry
 

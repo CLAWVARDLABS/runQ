@@ -7,6 +7,7 @@
     "runq": "./src/cli.js"
   },
   "scripts": {
+    "harness:openclaw": "node examples/openclaw-harness/run.js",
     "inbox": "node apps/run-inbox/server.js",
     "test": "node --test"
   },

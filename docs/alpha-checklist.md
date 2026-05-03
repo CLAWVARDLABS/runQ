@@ -22,6 +22,21 @@ Invite users who:
 5. Open the local Run Inbox.
 6. Export one low-confidence session bundle.
 
+## OpenClaw Harness Check
+
+Before testing with external users, run the deterministic OpenClaw-like harness:
+
+```bash
+npm run harness:openclaw -- --scenario verified-success --db .runq/openclaw-harness.db
+npm run harness:openclaw -- --scenario repeated-test-failure --db .runq/openclaw-harness.db
+```
+
+Use the output as an early product sanity check:
+
+- The verified-success run should score high on Outcome Confidence.
+- The repeated-test-failure run should show high Loop Risk.
+- The repeated-test-failure run should emit verification strategy and loop prevention recommendations.
+
 ## What To Measure
 
 - Did sessions appear without manual cleanup?
@@ -40,4 +55,3 @@ RunQ is ready for a public developer preview when:
 - At least 80 percent of sessions reconstruct a usable timeline.
 - At least 3 users act on one recommendation.
 - No sensitive-data leak is found in default metadata mode.
-
