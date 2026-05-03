@@ -3,15 +3,18 @@ import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 import { validateEvent } from './schema.js';
+import { redactEvent } from './redaction.js';
 
 export class RunqStore {
   #db;
+  #redactionPolicy;
 
-  constructor(dbPath) {
+  constructor(dbPath, { redactionPolicy = {} } = {}) {
     if (!dbPath) {
       throw new Error('dbPath is required');
     }
 
+    this.#redactionPolicy = redactionPolicy;
     mkdirSync(dirname(dbPath), { recursive: true });
     this.#db = new DatabaseSync(dbPath);
     this.#initialize();
@@ -42,7 +45,8 @@ export class RunqStore {
   }
 
   appendEvent(event) {
-    const validation = validateEvent(event);
+    const storedEvent = redactEvent(event, this.#redactionPolicy);
+    const validation = validateEvent(storedEvent);
     if (!validation.ok) {
       throw new Error(`Invalid RunQ event: ${validation.errors.join(', ')}`);
     }
@@ -64,17 +68,17 @@ export class RunqStore {
     `);
 
     insert.run(
-      event.event_id,
-      event.session_id,
-      event.run_id,
-      event.parent_id ?? null,
-      event.event_type,
-      event.framework,
-      event.source,
-      event.timestamp,
-      event.privacy.level,
-      JSON.stringify(event.payload),
-      JSON.stringify(event)
+      storedEvent.event_id,
+      storedEvent.session_id,
+      storedEvent.run_id,
+      storedEvent.parent_id ?? null,
+      storedEvent.event_type,
+      storedEvent.framework,
+      storedEvent.source,
+      storedEvent.timestamp,
+      storedEvent.privacy.level,
+      JSON.stringify(storedEvent.payload),
+      JSON.stringify(storedEvent)
     );
   }
 

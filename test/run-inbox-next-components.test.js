@@ -58,6 +58,10 @@ test('RunInboxApp renders the Next.js workbench regions and selected run quality
   assert.match(html, /Setup Health/);
   assert.match(html, /Claude Code/);
   assert.match(html, /Hook configured/);
+  assert.match(html, /Search runs/);
+  assert.match(html, /Needs review/);
+  assert.match(html, /Search events/);
+  assert.match(html, /Event type/);
   assert.match(html, /Runs/);
   assert.match(html, /Timeline/);
   assert.match(html, /Quality Inspector/);

@@ -129,6 +129,9 @@ export function main(argv = process.argv.slice(2)) {
       console.log(`RunQ setup health: ${health.ok ? 'ok' : 'needs attention'}`);
       for (const check of health.checks) {
         console.log(`- ${check.label}: ${check.status} - ${check.summary}`);
+        if (check.status !== 'ok' && check.remediation) {
+          console.log(`  Fix: ${check.remediation}`);
+        }
       }
     }
     return 0;

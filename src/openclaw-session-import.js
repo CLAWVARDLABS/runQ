@@ -71,6 +71,38 @@ export function openClawSessionRowsToRunQEvents(rows) {
     );
   }
 
+  for (const row of rows) {
+    if (row.type === 'tool_call') {
+      inputs.push({
+        hook: 'before_tool_call',
+        event: {
+          ...base,
+          toolName: row.name ?? row.toolName,
+          toolCallId: row.id ?? row.toolCallId,
+          params: row.params
+        },
+        ctx: { agentId: 'openclaw-main', sessionId: session.id, workspaceDir: session.cwd },
+        now: row.timestamp ?? session.timestamp
+      });
+    }
+    if (row.type === 'tool_result') {
+      inputs.push({
+        hook: 'after_tool_call',
+        event: {
+          ...base,
+          toolName: row.name ?? row.toolName,
+          toolCallId: row.toolCallId ?? row.id,
+          params: row.params,
+          result: row.result,
+          error: row.error,
+          durationMs: row.durationMs
+        },
+        ctx: { agentId: 'openclaw-main', sessionId: session.id, workspaceDir: session.cwd },
+        now: row.timestamp ?? session.timestamp
+      });
+    }
+  }
+
   if (assistantMessage) {
     inputs.push({
       hook: 'llm_output',

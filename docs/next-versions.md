@@ -2,16 +2,21 @@
 
 ## v0.2.0: Better Session Capture
 
+Status: implemented for local alpha; needs real-session tuning.
+
 - Harden OpenClaw reporter coverage against real plugin payloads.
-- Add PermissionRequest support for Claude Code.
-- Add FileChanged support for Claude Code.
-- Add `events` CLI command for timeline inspection.
-- Add redaction policy file.
+- Add OpenClaw tool row import into command timeline events.
+- Add Run Inbox timeline filtering and event search.
+- Add Run Inbox run search and status filters.
+- Add default local redaction for prompts, command strings, command output, and secret-looking strings.
+- Add setup health remediation hints for Claude Code, Codex, OpenClaw, and Hermes.
 - Add setup health checks for Claude Code, Codex, OpenClaw, and Hermes.
 
-## v0.3.0: Product Harnesses
+## v0.3.0: Capture Depth
 
 - Add a native OpenClaw plugin reporter that batches hook events asynchronously.
+- Add richer Claude Code permission and file-change hook coverage as stable hook payloads are confirmed.
+- Add Codex fixtures as public hook contracts stabilize.
 - Add Hermes harness coverage once its hook/event shape is confirmed.
 - Add richer satisfaction labels: corrected, rerun, escalated.
 - Add golden quality snapshots for real imported sessions.

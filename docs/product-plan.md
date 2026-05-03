@@ -4,7 +4,7 @@ Last updated: 2026-05-03
 
 ## Current Stage
 
-RunQ is in local alpha. The product can capture, import, score, and inspect coding-agent runs locally. It is ready for controlled developer trials, but not yet a hosted team product.
+RunQ is in local alpha. The product can capture, import, score, inspect, filter, and redact coding-agent runs locally. The v0.1/v0.2 alpha code path is ready for controlled developer trials, but the project is not yet a hosted team product.
 
 ## North Star
 
@@ -14,7 +14,7 @@ Help developers and teams answer: did this coding-agent run actually work, and w
 
 ### v0.1 Local Alpha
 
-Status: in progress
+Status: code complete for local alpha; field validation pending
 
 Scope:
 
@@ -25,6 +25,7 @@ Scope:
 - OpenClaw session reporter.
 - Agent Manager for product testing.
 - Setup Health checks.
+- `runq doctor` remediation hints.
 
 Exit criteria:
 
@@ -34,22 +35,22 @@ Exit criteria:
 
 ### v0.2 Capture Quality
 
-Status: planned
+Status: code complete for alpha scope; needs real-session tuning
 
 Scope:
 
 - `runq doctor` remediation hints for failed checks.
 - OpenClaw reporter support for richer real event rows.
-- Claude Code permission and file-change hooks.
-- Codex hook fixtures as public hook contracts stabilize.
+- Claude Code and Codex hook initialization.
+- Hermes adapter entrypoint.
 - Timeline filtering and event search.
-- Redaction policy file.
+- Default local redaction policy.
 
 Exit criteria:
 
-- 80 percent of imported real sessions produce a usable timeline.
+- 80 percent of imported real sessions produce a usable timeline in the alpha test set.
 - Setup Health explains every missing integration with an exact fix command.
-- No raw prompts or command output are stored unless explicitly enabled.
+- Raw prompts, command strings, command output, and secret-looking strings are redacted before storage unless an explicit future opt-in policy changes that behavior.
 
 ### v0.3 Team Boundary
 
@@ -77,7 +78,20 @@ Exit criteria:
 - `runq init codex`.
 - `runq doctor`.
 - Setup Health panel in Run Inbox.
+- Run Inbox run search, status filters, event search, and event-type filtering.
+- Default collector redaction.
+- OpenClaw `tool_call` and `tool_result` rows become command timeline events.
 - Satisfaction signals now affect outcome scoring.
+
+## Latest Verification
+
+On 2026-05-03:
+
+- `npm test` passed with 59 tests.
+- `npm run build` passed.
+- `npm audit --omit=dev` found 0 vulnerabilities.
+- Agent Manager local mode generated and ingested 2 product-test sessions.
+- OpenClaw reporter one-shot imported 3 local OpenClaw session files into RunQ.
 
 ## Current Risks
 
@@ -85,7 +99,7 @@ Exit criteria:
 - Hermes adapter uses a generic event shape until its hook contract is confirmed.
 - Recommendations are deterministic rules, not yet a deeper optimization assistant.
 - Run Inbox is local-only and has no auth, team workspace, or sync model.
-- Docker Agent Manager still needs a daemon-backed verification run on a machine with Docker running.
+- The v0.1/v0.2 code path still needs at least 5 fresh real local sessions to validate the 80 percent usable-timeline target.
 
 ## Operating Rules
 

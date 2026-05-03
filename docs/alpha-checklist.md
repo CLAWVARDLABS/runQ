@@ -18,9 +18,11 @@ Invite users who:
 1. Clone the repo.
 2. Run `bash scripts/install-local.sh`.
 3. Configure Claude Code or Codex with `node src/cli.js init claude-code --db .runq/runq.db` or `node src/cli.js init codex --db .runq/runq.db`.
-4. Run a normal coding-agent task.
-5. Open the local Run Inbox.
-6. Export one low-confidence session bundle.
+4. Run `node src/cli.js doctor --db .runq/runq.db` and fix every missing check that applies to the agent being tested.
+5. Run a normal coding-agent task.
+6. Open the local Run Inbox.
+7. Search or filter the run list and timeline to confirm the captured events are inspectable.
+8. Export one low-confidence session bundle.
 
 ## OpenClaw Harness Check
 
@@ -73,7 +75,32 @@ Use the imported sessions to check:
 
 - New OpenClaw `.jsonl` sessions are imported once.
 - Re-running `--once` does not duplicate events.
+- `tool_call` and `tool_result` rows appear as command timeline events when present.
 - `satisfaction.recorded` influences the Run Inbox outcome score.
+
+## Setup Health Check
+
+Run this before every alpha trial:
+
+```bash
+node src/cli.js doctor --db .runq/runq.db
+```
+
+Use the output to check:
+
+- Claude Code and Codex missing hooks include exact `init` commands.
+- OpenClaw missing sessions include the reporter command.
+- Hermes shows the adapter path and remains manual until its hook contract is confirmed.
+- The Run Inbox Setup Health panel mirrors the CLI status.
+
+## Redaction Check
+
+Before accepting an alpha export:
+
+- Confirm raw prompts are represented as hashes, summaries, and lengths.
+- Confirm command output is represented as hashes and status metadata.
+- Confirm token-looking strings, passwords, and API keys are not persisted in event payloads.
+- Confirm scoring still has binary names, exit codes, durations, and verification flags.
 
 ## What To Measure
 

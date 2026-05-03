@@ -89,6 +89,12 @@ A user or evaluator label describing what happened after the run. Satisfaction i
 - `sensitive`: full prompts, command output, diffs, or source snippets.
 - `secret`: detected credential material.
 
+## Default Local Redaction
+
+RunQ collectors redact sensitive payload fields before persistence. The default policy removes raw prompt/content fields, raw command strings, stdout, stderr, output, password/API-key/token/secret fields, and secret-looking strings. Adapters should preserve metadata that is useful for quality scoring, such as hashes, lengths, binary names, exit codes, durations, and verification flags.
+
+Events that arrive with `privacy.level` set to `sensitive` or `secret` are stored as redacted metadata by default.
+
 ## Score Dimensions
 
 - Outcome Confidence

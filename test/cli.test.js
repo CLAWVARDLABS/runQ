@@ -206,3 +206,42 @@ test('CLI import-openclaw converts a session jsonl into RunQ events', () => {
   assert.equal(rows[0].session_id, 'openclaw-real-1');
   assert.equal(rows[0].event_count, 7);
 });
+
+test('CLI import-openclaw converts OpenClaw tool rows into command timeline events', () => {
+  const dir = tempDir();
+  const dbPath = join(dir, 'runq.db');
+  const sessionPath = join(dir, 'openclaw-tools.jsonl');
+  writeFileSync(sessionPath, [
+    JSON.stringify({ type: 'session', id: 'openclaw-real-tools', timestamp: '2026-05-03T01:00:00.000Z', cwd: '/repo/app' }),
+    JSON.stringify({ type: 'message', timestamp: '2026-05-03T01:00:00.020Z', message: { role: 'user', content: [{ type: 'text', text: 'Run tests' }] } }),
+    JSON.stringify({ type: 'tool_call', timestamp: '2026-05-03T01:00:00.500Z', id: 'tool-1', name: 'system.run', params: { command: 'npm test' } }),
+    JSON.stringify({ type: 'tool_result', timestamp: '2026-05-03T01:00:04.000Z', toolCallId: 'tool-1', name: 'system.run', params: { command: 'npm test' }, result: { exitCode: 1, stderr: '1 failing test' }, durationMs: 3500 }),
+    JSON.stringify({ type: 'message', timestamp: '2026-05-03T01:00:05.000Z', message: { role: 'assistant', provider: 'clawvard-token', model: 'MiniMax-M2.7', content: [{ type: 'text', text: 'tests failed' }], usage: { input: 10, output: 2, totalTokens: 12 }, stopReason: 'stop' } })
+  ].join('\n'));
+
+  const result = spawnSync(process.execPath, [
+    cliPath,
+    'import-openclaw',
+    sessionPath,
+    '--db',
+    dbPath
+  ], {
+    encoding: 'utf8'
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+
+  const exported = spawnSync(process.execPath, [
+    cliPath,
+    'export',
+    'openclaw-real-tools',
+    '--db',
+    dbPath
+  ], {
+    encoding: 'utf8'
+  });
+  const bundle = JSON.parse(exported.stdout);
+  assert.equal(bundle.events.some((event) => event.event_type === 'command.started'), true);
+  assert.equal(bundle.events.some((event) => event.event_type === 'command.ended' && event.payload.exit_code === 1), true);
+  assert.equal(bundle.quality.reasons.includes('verification_failed_at_end'), true);
+});

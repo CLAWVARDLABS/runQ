@@ -122,13 +122,53 @@ function SetupHealthPane({ setupHealth }) {
               h('span', { className: 'text-xs font-semibold text-white', key: 'label' }, check.label),
               chip(check.status, setupTone(check.status), 'status')
             ]),
-            h('p', { className: 'mt-1 text-xs leading-5 text-runq-muted', key: 'summary' }, check.summary)
+            h('p', { className: 'mt-1 text-xs leading-5 text-runq-muted', key: 'summary' }, check.summary),
+            check.status !== 'ok' && check.remediation
+              ? h('code', {
+                  className: 'mt-2 block break-words rounded bg-runq-surface3 px-2 py-1.5 text-[11px] leading-5 text-runq-muted',
+                  key: 'fix'
+                }, check.remediation)
+              : null
           ])
         ))
   ]);
 }
 
-function RunListPane({ sessions, selectedSessionId, onSelect, setupHealth }) {
+function runMatchesFilter(session, filter) {
+  const satisfaction = session.satisfaction?.label;
+  const confidence = session.quality?.outcome_confidence ?? 0;
+  if (filter === 'needs_review') return confidence < 0.7 || satisfaction === 'needs_revision' || satisfaction === 'abandoned';
+  if (filter === 'accepted') return satisfaction === 'accepted' || confidence >= 0.85;
+  if (filter === 'failed') return satisfaction === 'abandoned' || (session.quality?.reasons || []).some((reason) => reason.includes('failed'));
+  return true;
+}
+
+function runMatchesSearch(session, query) {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return true;
+  return [
+    session.session_id,
+    session.framework,
+    session.satisfaction?.label,
+    ...(session.quality?.reasons || []),
+    ...(session.recommendations || []).flatMap((recommendation) => [
+      recommendation.title,
+      recommendation.category,
+      recommendation.summary
+    ])
+  ].filter(Boolean).join(' ').toLowerCase().includes(normalized);
+}
+
+function RunListPane({ sessions, selectedSessionId, onSelect, setupHealth, runFilter, setRunFilter, runSearch, setRunSearch }) {
+  const visibleSessions = sessions.filter((session) =>
+    runMatchesFilter(session, runFilter) && runMatchesSearch(session, runSearch)
+  );
+  const filters = [
+    ['all', 'All'],
+    ['needs_review', 'Needs review'],
+    ['accepted', 'Accepted'],
+    ['failed', 'Failed']
+  ];
   return h('section', {
     className: 'min-w-0 overflow-auto border-r border-runq-hairlineSoft bg-runq-canvas p-5',
     'data-pane': 'runs',
@@ -144,23 +184,38 @@ function RunListPane({ sessions, selectedSessionId, onSelect, setupHealth }) {
       h('div', {
         className: 'hidden rounded-lg border border-runq-hairlineSoft bg-runq-surface1 p-1 lg:inline-flex',
         key: 'segments'
-      }, ['All', 'Needs review', 'Accepted', 'Failed'].map((label, index) =>
-        h('span', {
-          className: `rounded-md px-2 py-1 text-xs ${index === 0 ? 'bg-runq-surface3 text-white' : 'text-runq-subtle'}`,
-          key: label
+      }, filters.map(([value, label]) =>
+        h('button', {
+          className: `rounded-md px-2 py-1 text-xs ${runFilter === value ? 'bg-runq-surface3 text-white' : 'text-runq-subtle hover:text-white'}`,
+          key: value,
+          onClick: () => setRunFilter(value),
+          type: 'button'
         }, label)
       ))
     ]),
-    sessions.length === 0
+    h('label', { className: 'mb-3 block', key: 'search' }, [
+      h('span', { className: 'sr-only', key: 'label' }, 'Search runs'),
+      h('input', {
+        className: 'w-full rounded-lg border border-runq-hairline bg-runq-surface1 px-3 py-2 text-sm text-white outline-none placeholder:text-runq-subtle focus:border-runq-terraform/70',
+        key: 'input',
+        onChange: (event) => setRunSearch(event.target.value),
+        placeholder: 'Search runs',
+        type: 'search',
+        value: runSearch
+      })
+    ]),
+    visibleSessions.length === 0
       ? h(EmptyState, { key: 'empty' }, [
-          'No runs captured yet. Configure a Claude Code, Codex, or OpenClaw hook to start collecting local run quality events.',
+          sessions.length === 0
+            ? 'No runs captured yet. Configure a Claude Code, Codex, or OpenClaw hook to start collecting local run quality events.'
+            : 'No runs match the current filters.',
           h('br', { key: 'br1' }),
           h('br', { key: 'br2' }),
           h('code', { className: 'rounded bg-runq-surface3 px-1.5 py-0.5 text-white', key: 'code1' }, 'bash scripts/install-local.sh'),
           h('br', { key: 'br3' }),
           h('code', { className: 'rounded bg-runq-surface3 px-1.5 py-0.5 text-white', key: 'code2' }, 'npm run inbox -- --db ~/.runq/runq.db --port 4545')
         ])
-      : h('div', { className: 'grid gap-2.5', key: 'rows' }, sessions.map((session) =>
+      : h('div', { className: 'grid gap-2.5', key: 'rows' }, visibleSessions.map((session) =>
           h(RunRow, {
             key: session.session_id,
             session,
@@ -195,7 +250,23 @@ function TimelineEvent({ event }) {
   ]);
 }
 
-function TimelinePane({ session, events }) {
+function eventMatchesSearch(event, query) {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return true;
+  return [
+    event.event_type,
+    event.framework,
+    event.source,
+    summarizeEvent(event),
+    JSON.stringify(event.payload || {})
+  ].join(' ').toLowerCase().includes(normalized);
+}
+
+function TimelinePane({ session, events, eventSearch, setEventSearch, eventTypeFilter, setEventTypeFilter }) {
+  const eventTypes = ['all', ...Array.from(new Set(events.map((event) => event.event_type))).sort()];
+  const visibleEvents = events.filter((event) =>
+    (eventTypeFilter === 'all' || event.event_type === eventTypeFilter) && eventMatchesSearch(event, eventSearch)
+  );
   return h('section', {
     className: 'min-w-0 overflow-auto border-r border-runq-hairlineSoft bg-runq-canvas p-5',
     'data-pane': 'timeline',
@@ -204,13 +275,41 @@ function TimelinePane({ session, events }) {
     h(PaneHeader, {
       key: 'header',
       title: 'Timeline',
-      meta: session ? `${session.framework} · ${events.length} events` : 'Select a run'
+      meta: session ? `${session.framework} · ${visibleEvents.length}/${events.length} events` : 'Select a run'
     }),
     !session
       ? h(EmptyState, { key: 'empty' }, 'Select a run to inspect its timeline and quality signals.')
-      : h('div', { className: 'relative grid gap-3 pl-[18px] before:absolute before:bottom-1 before:left-1 before:top-1 before:w-px before:bg-runq-hairline', key: 'events' },
-          events.map((event) => h(TimelineEvent, { key: event.event_id, event }))
-        )
+      : h(React.Fragment, { key: 'body' }, [
+          h('div', { className: 'mb-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_180px]', key: 'filters' }, [
+            h('label', { key: 'search' }, [
+              h('span', { className: 'sr-only', key: 'label' }, 'Search events'),
+              h('input', {
+                className: 'w-full rounded-lg border border-runq-hairline bg-runq-surface1 px-3 py-2 text-sm text-white outline-none placeholder:text-runq-subtle focus:border-runq-terraform/70',
+                key: 'input',
+                onChange: (event) => setEventSearch(event.target.value),
+                placeholder: 'Search events',
+                type: 'search',
+                value: eventSearch
+              })
+            ]),
+            h('label', { key: 'type' }, [
+              h('span', { className: 'sr-only', key: 'label' }, 'Event type'),
+              h('select', {
+                className: 'w-full rounded-lg border border-runq-hairline bg-runq-surface1 px-3 py-2 text-sm text-white outline-none focus:border-runq-terraform/70',
+                key: 'select',
+                onChange: (event) => setEventTypeFilter(event.target.value),
+                value: eventTypeFilter
+              }, eventTypes.map((type) =>
+                h('option', { key: type, value: type }, type === 'all' ? 'Event type' : type)
+              ))
+            ])
+          ]),
+          visibleEvents.length === 0
+            ? h(EmptyState, { key: 'empty-filtered' }, 'No events match the current filters.')
+            : h('div', { className: 'relative grid gap-3 pl-[18px] before:absolute before:bottom-1 before:left-1 before:top-1 before:w-px before:bg-runq-hairline', key: 'events' },
+                visibleEvents.map((event) => h(TimelineEvent, { key: event.event_id, event }))
+              )
+        ])
   ]);
 }
 
@@ -303,6 +402,10 @@ export function RunInboxApp({ initialSessions = [], initialEvents = [], setupHea
   const [sessions, setSessions] = useState(initialSessions);
   const [selectedSessionId, setSelectedSessionId] = useState(initialSessions[0]?.session_id ?? null);
   const [events, setEvents] = useState(initialEvents);
+  const [runFilter, setRunFilter] = useState('all');
+  const [runSearch, setRunSearch] = useState('');
+  const [eventSearch, setEventSearch] = useState('');
+  const [eventTypeFilter, setEventTypeFilter] = useState('all');
   const selectedSession = useMemo(
     () => sessions.find((session) => session.session_id === selectedSessionId) ?? null,
     [sessions, selectedSessionId]
@@ -325,6 +428,8 @@ export function RunInboxApp({ initialSessions = [], initialEvents = [], setupHea
 
   async function selectSession(sessionId) {
     setSelectedSessionId(sessionId);
+    setEventSearch('');
+    setEventTypeFilter('all');
     const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/events`);
     setEvents(await response.json());
   }
@@ -340,12 +445,20 @@ export function RunInboxApp({ initialSessions = [], initialEvents = [], setupHea
         sessions,
         selectedSessionId,
         onSelect: selectSession,
-        setupHealth
+        setupHealth,
+        runFilter,
+        setRunFilter,
+        runSearch,
+        setRunSearch
       }),
       h(TimelinePane, {
         key: 'timeline',
         session: selectedSession,
-        events
+        events,
+        eventSearch,
+        setEventSearch,
+        eventTypeFilter,
+        setEventTypeFilter
       }),
       h(QualityInspector, {
         key: 'quality',

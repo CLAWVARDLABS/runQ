@@ -45,6 +45,13 @@ node src/cli.js init claude-code --db .runq/runq.db
 node src/cli.js init codex --db .runq/runq.db
 ```
 
+Check setup health and exact remediation commands:
+
+```bash
+node src/cli.js doctor --db .runq/runq.db
+node src/cli.js doctor --json --db .runq/runq.db
+```
+
 Import real OpenClaw sessions:
 
 ```bash
@@ -100,6 +107,21 @@ Run Inbox is a Next.js + Tailwind workbench. The legacy no-build HTTP server rem
 ```bash
 npm run inbox:legacy -- --db .runq/dev.db --port 4545
 ```
+
+## Local Privacy Defaults
+
+RunQ stores metadata-first telemetry by default. Sensitive fields such as raw prompts, command strings, command output, token-looking strings, passwords, and API keys are redacted before events are persisted. Normalized adapters preserve hashes, lengths, binary names, exit codes, durations, and verification flags so scoring still works without storing raw private content.
+
+Use `privacy.level = "sensitive"` or `privacy.level = "secret"` only when an integration has seen raw private content. The local collector will downgrade stored events to metadata after redaction unless a future explicit opt-in policy changes that behavior.
+
+## Run Inbox
+
+Run Inbox includes:
+
+- Setup Health for Claude Code, Codex, OpenClaw, Hermes, Node.js, and the local database.
+- Run search and status filters for accepted, failed, and needs-review sessions.
+- Timeline search and event-type filters.
+- Quality Inspector with Outcome Confidence, satisfaction, and evidence-backed recommendations.
 
 Run tests:
 
