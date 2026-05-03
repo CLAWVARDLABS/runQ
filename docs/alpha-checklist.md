@@ -36,6 +36,7 @@ Use the output as an early product sanity check:
 - The verified-success run should score high on Outcome Confidence.
 - The repeated-test-failure run should show high Loop Risk.
 - The repeated-test-failure run should emit verification strategy and loop prevention recommendations.
+- Both runs should record a `satisfaction.recorded` event and match their golden product snapshots in tests.
 
 ## What To Measure
 

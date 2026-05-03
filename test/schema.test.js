@@ -29,6 +29,23 @@ test('validateEvent accepts a valid RunQ event envelope', () => {
   });
 });
 
+test('validateEvent accepts satisfaction.recorded events', () => {
+  assert.deepEqual(validateEvent({
+    ...validEvent,
+    event_id: 'evt_satisfaction_1',
+    event_type: 'satisfaction.recorded',
+    source: 'manual',
+    payload: {
+      label: 'accepted',
+      signal: 'user kept the agent output',
+      confidence: 1
+    }
+  }), {
+    ok: true,
+    errors: []
+  });
+});
+
 test('validateEvent rejects events missing required envelope fields', () => {
   const event = { ...validEvent };
   delete event.session_id;

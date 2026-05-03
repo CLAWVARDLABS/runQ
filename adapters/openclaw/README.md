@@ -92,3 +92,5 @@ The harness currently validates two core product questions:
 
 - Can RunQ recognize a coding-agent run that changed code and passed targeted verification?
 - Can RunQ recognize repeated failed verification and generate concrete workflow recommendations?
+
+Each scenario also writes a `satisfaction.recorded` event and is checked against a golden product snapshot. When scoring logic changes, these snapshots force an explicit review of whether the product judgment changed intentionally.

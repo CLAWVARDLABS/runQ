@@ -1,0 +1,37 @@
+{
+  "scenario": "repeated-test-failure",
+  "satisfaction": {
+    "label": "abandoned",
+    "signal": "same verification command failed three times before session end"
+  },
+  "product_judgment": {
+    "event_count": 8,
+    "event_types": [
+      "session.started",
+      "user.prompt.submitted",
+      "file.changed",
+      "command.ended",
+      "command.ended",
+      "command.ended",
+      "session.ended",
+      "satisfaction.recorded"
+    ],
+    "quality": {
+      "outcome_confidence": 0.2,
+      "verification_coverage": 0.4,
+      "rework_risk": 0.8,
+      "permission_friction": 0,
+      "loop_risk": 0.8,
+      "cost_efficiency": 0.5,
+      "score_version": "0.1.0",
+      "reasons": [
+        "verification_failed_at_end",
+        "repeated_command_failure"
+      ]
+    },
+    "recommendation_categories": [
+      "verification_strategy",
+      "loop_prevention"
+    ]
+  }
+}

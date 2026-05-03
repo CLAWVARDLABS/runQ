@@ -26,6 +26,10 @@ Data that supports a score or recommendation, such as a failed test command, rep
 
 The protocol's best estimate of whether the run likely succeeded. RunQ does not claim to know user satisfaction directly.
 
+### Satisfaction
+
+A user or evaluator label describing what happened after the run. Satisfaction is recorded separately from automated outcome scoring so RunQ can compare predicted quality against human judgment.
+
 ## Event Envelope
 
 ```json
@@ -73,6 +77,7 @@ The protocol's best estimate of whether the run likely succeeded. RunQ does not 
 - `lint.ended`
 - `error.raised`
 - `outcome.scored`
+- `satisfaction.recorded`
 - `recommendation.generated`
 - `recommendation.accepted`
 - `recommendation.dismissed`
@@ -101,3 +106,11 @@ The protocol's best estimate of whether the run likely succeeded. RunQ does not 
 - `task_sizing`
 - `loop_prevention`
 - `cost_routing`
+
+## Satisfaction Labels
+
+- `accepted`: the user kept or shipped the agent output.
+- `corrected`: the user kept part of the output but had to repair it.
+- `abandoned`: the user discarded the run or stopped it before completion.
+- `rerun`: the user asked another agent/run to solve the same task.
+- `unknown`: no judgment is available yet.

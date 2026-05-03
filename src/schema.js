@@ -22,6 +22,7 @@ export const eventTypes = new Set([
   'lint.ended',
   'error.raised',
   'outcome.scored',
+  'satisfaction.recorded',
   'recommendation.generated',
   'recommendation.accepted',
   'recommendation.dismissed'

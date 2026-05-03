@@ -26,6 +26,19 @@ function parseArgs(argv) {
   return args;
 }
 
+const scenarioSatisfaction = {
+  'verified-success': {
+    label: 'accepted',
+    signal: 'verification passed after code change',
+    expected_user_judgment: 'The developer would likely keep the agent output.'
+  },
+  'repeated-test-failure': {
+    label: 'abandoned',
+    signal: 'same verification command failed three times before session end',
+    expected_user_judgment: 'The developer would likely stop the run or manually intervene.'
+  }
+};
+
 function timestamp(base, offsetSeconds) {
   return new Date(Date.parse(base) + offsetSeconds * 1000).toISOString();
 }
@@ -49,6 +62,30 @@ function fileChangedEvent({ sessionId, runId, path, now }) {
       path_hash: hash(path),
       file_extension: path.split('.').pop(),
       change_kind: 'modified'
+    }
+  };
+}
+
+function satisfactionRecordedEvent({ sessionId, runId, scenario, now }) {
+  const satisfaction = scenarioSatisfaction[scenario];
+  return {
+    runq_version: '0.1.0',
+    event_id: eventId([sessionId, runId, 'satisfaction.recorded', scenario, now]),
+    schema_version: '0.1.0',
+    event_type: 'satisfaction.recorded',
+    timestamp: now,
+    session_id: sessionId,
+    run_id: runId,
+    framework: 'openclaw',
+    source: 'manual',
+    privacy: {
+      level: 'metadata',
+      redacted: true
+    },
+    payload: {
+      label: satisfaction.label,
+      signal: satisfaction.signal,
+      expected_user_judgment: satisfaction.expected_user_judgment
     }
   };
 }
@@ -125,7 +162,13 @@ function verifiedSuccessScenario(baseNow) {
       hook: 'session_end',
       event: { sessionId, sessionKey: 'local:success', messageCount: 7, durationMs: 6200 },
       ctx
-    }, timestamp(baseNow, 6))
+    }, timestamp(baseNow, 6)),
+    satisfactionRecordedEvent({
+      sessionId,
+      runId,
+      scenario: 'verified-success',
+      now: timestamp(baseNow, 7)
+    })
   ];
 }
 
@@ -175,7 +218,13 @@ function repeatedFailureScenario(baseNow) {
       hook: 'session_end',
       event: { sessionId, sessionKey: 'local:failure', messageCount: 8, durationMs: 7100 },
       ctx
-    }, timestamp(baseNow, 6))
+    }, timestamp(baseNow, 6)),
+    satisfactionRecordedEvent({
+      sessionId,
+      runId,
+      scenario: 'repeated-test-failure',
+      now: timestamp(baseNow, 7)
+    })
   ];
 }
 
@@ -205,14 +254,32 @@ export function runOpenClawHarness({ dbPath, scenario, now = new Date().toISOStr
     const session = store.listSessions()[0];
     const events = store.listEventsForSession(session.session_id);
     return {
+      scenario,
       session,
       events,
       quality: scoreRun(events),
-      recommendations: recommendRunImprovements(events)
+      recommendations: recommendRunImprovements(events),
+      satisfaction: scenarioSatisfaction[scenario]
     };
   } finally {
     store.close();
   }
+}
+
+export function createOpenClawHarnessSnapshot(result) {
+  return {
+    scenario: result.scenario,
+    satisfaction: {
+      label: result.satisfaction.label,
+      signal: result.satisfaction.signal
+    },
+    product_judgment: {
+      event_count: result.events.length,
+      event_types: result.events.map((event) => event.event_type),
+      quality: result.quality,
+      recommendation_categories: result.recommendations.map((recommendation) => recommendation.category)
+    }
+  };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
@@ -225,9 +292,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
   const result = runOpenClawHarness(args);
   console.log(JSON.stringify({
+    scenario: result.scenario,
     session_id: result.session.session_id,
     framework: result.session.framework,
     event_count: result.events.length,
+    satisfaction: result.satisfaction,
     quality: result.quality,
     recommendations: result.recommendations
   }, null, 2));

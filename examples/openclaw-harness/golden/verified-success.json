@@ -1,0 +1,33 @@
+{
+  "scenario": "verified-success",
+  "satisfaction": {
+    "label": "accepted",
+    "signal": "verification passed after code change"
+  },
+  "product_judgment": {
+    "event_count": 8,
+    "event_types": [
+      "session.started",
+      "user.prompt.submitted",
+      "model.call.started",
+      "model.call.ended",
+      "file.changed",
+      "command.ended",
+      "session.ended",
+      "satisfaction.recorded"
+    ],
+    "quality": {
+      "outcome_confidence": 0.9,
+      "verification_coverage": 1,
+      "rework_risk": 0.1,
+      "permission_friction": 0,
+      "loop_risk": 0,
+      "cost_efficiency": 0.5,
+      "score_version": "0.1.0",
+      "reasons": [
+        "verification_passed_after_changes"
+      ]
+    },
+    "recommendation_categories": []
+  }
+}

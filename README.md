@@ -90,7 +90,7 @@ The OpenClaw harness produces two deterministic sessions:
 - `verified-success`: a coding-agent run changes a file, runs targeted verification, and gets high Outcome Confidence.
 - `repeated-test-failure`: a run changes a file, repeats the same failing verification command, and gets verification and loop-prevention recommendations.
 
-Use these harnesses when adding new metrics, adapters, or recommendations so quality scoring changes remain explainable.
+Each scenario records a `satisfaction.recorded` event and has a golden product snapshot under `examples/openclaw-harness/golden/`. Use these harnesses when adding new metrics, adapters, or recommendations so quality scoring changes remain explainable.
 
 ## Relationship To OpenTelemetry
 
