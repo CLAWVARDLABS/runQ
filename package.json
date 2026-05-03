@@ -7,12 +7,26 @@
     "runq": "./src/cli.js"
   },
   "scripts": {
+    "build": "next build",
+    "dev": "next dev",
     "harness:openclaw": "node examples/openclaw-harness/run.js",
-    "inbox": "node apps/run-inbox/server.js",
+    "inbox": "node scripts/run-inbox-next.mjs",
+    "inbox:legacy": "node apps/run-inbox/server.js",
     "test": "node --test"
   },
   "engines": {
     "node": ">=22.5.0"
   },
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@tailwindcss/postcss": "^4.2.4",
+    "next": "^16.2.4",
+    "postcss": "^8.5.13",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "tailwindcss": "^4.2.4"
+  },
+  "overrides": {
+    "postcss": "^8.5.13"
+  }
 }

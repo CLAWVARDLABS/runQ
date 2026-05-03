@@ -63,10 +63,22 @@ Open the local Run Inbox:
 npm run inbox -- --db .runq/dev.db --port 4545
 ```
 
+Run Inbox is a Next.js + Tailwind workbench. The legacy no-build HTTP server remains available for compatibility:
+
+```bash
+npm run inbox:legacy -- --db .runq/dev.db --port 4545
+```
+
 Run tests:
 
 ```bash
 npm test
+```
+
+Build the Next.js app:
+
+```bash
+npm run build
 ```
 
 ## Initial Integrations

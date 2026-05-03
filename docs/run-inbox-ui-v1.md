@@ -3,6 +3,7 @@
 Status: Draft  
 Target surface: local RunQ Run Inbox  
 Reference style guide: `docs/design.md`
+Implementation stack: Next.js App Router + Tailwind CSS v4
 
 ## Product Positioning
 
@@ -368,7 +369,7 @@ Do not use viewport-scaled font sizes. Keep letter spacing at 0 except uppercase
 - `SatisfactionBadge`
 - `EmptyState`
 
-In the current no-build server, these can be plain HTML/CSS/vanilla JS functions inside `apps/run-inbox/server.js`. If the UI grows beyond this v1, split static assets into separate files or move to a small frontend build.
+The implemented v1 uses React components under `components/run-inbox/`, Next App Router routes under `app/`, and Tailwind CSS v4 tokens in `app/globals.css`. The old no-build server remains available as `npm run inbox:legacy`.
 
 ## API Needs
 

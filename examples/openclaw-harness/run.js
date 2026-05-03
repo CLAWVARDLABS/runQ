@@ -251,8 +251,9 @@ export function runOpenClawHarness({ dbPath, scenario, now = new Date().toISOStr
       store.appendEvent(event);
     }
 
-    const session = store.listSessions()[0];
-    const events = store.listEventsForSession(session.session_id);
+    const sessionId = generatedEvents[0]?.session_id;
+    const session = store.listSessions().find((candidate) => candidate.session_id === sessionId);
+    const events = store.listEventsForSession(sessionId);
     return {
       scenario,
       session,

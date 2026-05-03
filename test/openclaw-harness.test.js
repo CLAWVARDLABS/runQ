@@ -49,6 +49,26 @@ test('OpenClaw harness records repeated failed verification and emits product re
   assert.equal(result.satisfaction.label, 'abandoned');
 });
 
+test('OpenClaw harness returns the scenario session when the database already contains other runs', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'runq-openclaw-harness-multi-'));
+  const dbPath = join(dir, 'runq.db');
+
+  runOpenClawHarness({
+    dbPath,
+    scenario: 'repeated-test-failure',
+    now: '2026-05-03T05:00:00.000Z'
+  });
+  const result = runOpenClawHarness({
+    dbPath,
+    scenario: 'verified-success',
+    now: '2026-05-03T04:00:00.000Z'
+  });
+
+  assert.equal(result.session.session_id, 'openclaw-harness-success');
+  assert.equal(result.quality.outcome_confidence, 0.9);
+  assert.equal(result.satisfaction.label, 'accepted');
+});
+
 test('OpenClaw harness CLI prints a JSON quality report', () => {
   const dir = mkdtempSync(join(tmpdir(), 'runq-openclaw-harness-cli-'));
   const result = spawnSync(process.execPath, [
