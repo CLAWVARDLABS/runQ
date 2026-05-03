@@ -245,3 +245,43 @@ test('CLI import-openclaw converts OpenClaw tool rows into command timeline even
   assert.equal(bundle.events.some((event) => event.event_type === 'command.ended' && event.payload.exit_code === 1), true);
   assert.equal(bundle.quality.reasons.includes('verification_failed_at_end'), true);
 });
+
+test('CLI import-openclaw converts OpenClaw message tool calls and uses the last assistant event', () => {
+  const dir = tempDir();
+  const dbPath = join(dir, 'runq.db');
+  const sessionPath = join(dir, 'openclaw-message-tools.jsonl');
+  writeFileSync(sessionPath, [
+    JSON.stringify({ type: 'session', id: 'openclaw-message-tools', timestamp: '2026-05-03T01:00:00.000Z', cwd: '/repo/app' }),
+    JSON.stringify({ type: 'message', timestamp: '2026-05-03T01:00:01.000Z', message: { role: 'user', content: [{ type: 'text', text: 'Run tests' }] } }),
+    JSON.stringify({ type: 'message', timestamp: '2026-05-03T01:00:02.000Z', message: { role: 'assistant', provider: 'clawvard-token', model: 'MiniMax-M2.7', content: [{ type: 'toolCall', id: 'call-1', name: 'exec', arguments: { command: 'npm test' } }], usage: { input: 100, output: 20, totalTokens: 120 }, stopReason: 'toolUse' } }),
+    JSON.stringify({ type: 'message', timestamp: '2026-05-03T01:00:04.000Z', message: { role: 'toolResult', toolCallId: 'call-1', toolName: 'exec', details: { exitCode: 1, durationMs: 2000, aggregated: '1 failing test' } } }),
+    JSON.stringify({ type: 'message', timestamp: '2026-05-03T01:10:00.000Z', message: { role: 'assistant', provider: 'clawvard-token', model: 'MiniMax-M2.7', content: [{ type: 'text', text: 'Request was aborted' }], usage: { input: 200, output: 5, totalTokens: 205 }, stopReason: 'aborted', errorMessage: 'Request was aborted' } })
+  ].join('\n'));
+
+  const result = spawnSync(process.execPath, [
+    cliPath,
+    'import-openclaw',
+    sessionPath,
+    '--db',
+    dbPath
+  ], {
+    encoding: 'utf8'
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+
+  const exported = spawnSync(process.execPath, [
+    cliPath,
+    'export',
+    'openclaw-message-tools',
+    '--db',
+    dbPath
+  ], {
+    encoding: 'utf8'
+  });
+  const bundle = JSON.parse(exported.stdout);
+  assert.equal(bundle.events.some((event) => event.event_type === 'command.started'), true);
+  assert.equal(bundle.events.some((event) => event.event_type === 'command.ended' && event.payload.exit_code === 1), true);
+  assert.equal(bundle.events.find((event) => event.event_type === 'session.ended')?.payload.duration_ms, 600000);
+  assert.equal(bundle.events.find((event) => event.event_type === 'model.call.ended')?.payload.total_tokens, 205);
+});

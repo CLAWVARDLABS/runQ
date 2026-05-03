@@ -75,3 +75,29 @@ test('recommendRunImprovements suggests loop prevention for repeated command fai
   assert.equal(recommendations[0].category, 'loop_prevention');
   assert.equal(recommendations[0].evidence_event_ids.length, 3);
 });
+
+test('recommendRunImprovements suggests workspace targeting when a run searches broadly and ends abandoned', () => {
+  const recommendations = recommendRunImprovements([
+    event('evt_find', 'command.ended', {
+      binary: 'find',
+      args_hash: 'sha256:find-home',
+      exit_code: 0,
+      is_verification: false
+    }),
+    event('evt_ls', 'command.ended', {
+      binary: 'ls',
+      args_hash: 'sha256:ls-workspace',
+      exit_code: 0,
+      is_verification: false
+    }),
+    event('evt_end', 'session.ended', {
+      ended_reason: 'error',
+      duration_ms: 600000
+    }),
+    event('evt_satisfaction', 'satisfaction.recorded', {
+      label: 'abandoned'
+    })
+  ]);
+
+  assert.equal(recommendations.some((item) => item.category === 'task_sizing'), true);
+});

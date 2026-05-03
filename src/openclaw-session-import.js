@@ -31,7 +31,8 @@ export function openClawSessionRowsToRunQEvents(rows) {
 
   const modelChange = rows.find((row) => row.type === 'model_change');
   const userMessage = rows.find((row) => row.type === 'message' && row.message?.role === 'user');
-  const assistantMessage = rows.find((row) => row.type === 'message' && row.message?.role === 'assistant');
+  const assistantMessages = rows.filter((row) => row.type === 'message' && row.message?.role === 'assistant');
+  const assistantMessage = assistantMessages.at(-1);
   const provider = assistantMessage?.message?.provider ?? modelChange?.provider;
   const model = assistantMessage?.message?.model ?? modelChange?.modelId;
   const prompt = textBlocks(userMessage?.message?.content);
@@ -71,8 +72,10 @@ export function openClawSessionRowsToRunQEvents(rows) {
     );
   }
 
+  const toolParamsById = new Map();
   for (const row of rows) {
     if (row.type === 'tool_call') {
+      toolParamsById.set(row.id ?? row.toolCallId, row.params);
       inputs.push({
         hook: 'before_tool_call',
         event: {
@@ -85,6 +88,25 @@ export function openClawSessionRowsToRunQEvents(rows) {
         now: row.timestamp ?? session.timestamp
       });
     }
+    if (row.type === 'message' && row.message?.role === 'assistant' && Array.isArray(row.message.content)) {
+      for (const block of row.message.content) {
+        if (block?.type !== 'toolCall') {
+          continue;
+        }
+        toolParamsById.set(block.id, block.arguments);
+        inputs.push({
+          hook: 'before_tool_call',
+          event: {
+            ...base,
+            toolName: block.name,
+            toolCallId: block.id,
+            params: block.arguments
+          },
+          ctx: { agentId: 'openclaw-main', sessionId: session.id, workspaceDir: session.cwd },
+          now: row.timestamp ?? session.timestamp
+        });
+      }
+    }
     if (row.type === 'tool_result') {
       inputs.push({
         hook: 'after_tool_call',
@@ -96,6 +118,26 @@ export function openClawSessionRowsToRunQEvents(rows) {
           result: row.result,
           error: row.error,
           durationMs: row.durationMs
+        },
+        ctx: { agentId: 'openclaw-main', sessionId: session.id, workspaceDir: session.cwd },
+        now: row.timestamp ?? session.timestamp
+      });
+    }
+    if (row.type === 'message' && row.message?.role === 'toolResult') {
+      inputs.push({
+        hook: 'after_tool_call',
+        event: {
+          ...base,
+          toolName: row.message.toolName,
+          toolCallId: row.message.toolCallId,
+          params: toolParamsById.get(row.message.toolCallId),
+          result: {
+            exitCode: row.message.details?.exitCode,
+            stdout: row.message.details?.stdout,
+            stderr: row.message.details?.stderr,
+            output: row.message.details?.aggregated
+          },
+          durationMs: row.message.details?.durationMs
         },
         ctx: { agentId: 'openclaw-main', sessionId: session.id, workspaceDir: session.cwd },
         now: row.timestamp ?? session.timestamp

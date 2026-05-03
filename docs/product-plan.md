@@ -92,6 +92,7 @@ On 2026-05-03:
 - `npm audit --omit=dev` found 0 vulnerabilities.
 - Agent Manager local mode generated and ingested 2 product-test sessions.
 - OpenClaw reporter one-shot imported 3 local OpenClaw session files into RunQ.
+- Real OpenClaw eval `runq-eval-bugfix-20260503` exposed a workspace-targeting failure: OpenClaw ran in its own workspace, explored broadly for 600 seconds, made no useful code change, and timed out. RunQ now imports the full 157-event timeline and emits a workspace-targeting recommendation.
 
 ## Current Risks
 

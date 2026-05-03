@@ -17,7 +17,27 @@ const DEFAULT_SECRET_PATTERNS = [
   /(api[_-]?key|authorization|bearer|password|secret|token)\s*[:=]\s*["']?[^"'\s]+/gi
 ];
 
+const SAFE_METADATA_KEYS = new Set([
+  'args_hash',
+  'cache_read_tokens',
+  'cache_write_tokens',
+  'command_id',
+  'command_kind',
+  'history_messages_count',
+  'images_count',
+  'input_tokens',
+  'output_hash',
+  'output_tokens',
+  'prompt_length',
+  'stderr_hash',
+  'stdout_hash',
+  'total_tokens'
+]);
+
 function shouldRedactKey(key, policy) {
+  if (SAFE_METADATA_KEYS.has(key) || key.endsWith('_hash')) {
+    return false;
+  }
   return (policy.redactKeys || DEFAULT_REDACT_KEYS).some((pattern) => pattern.test(key));
 }
 

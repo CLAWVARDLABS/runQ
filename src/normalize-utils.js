@@ -17,7 +17,13 @@ export function binaryFromCommand(command) {
 }
 
 export function isVerificationCommand(command) {
-  return /\b(test|spec|vitest|jest|pytest|go test|cargo test|pnpm test|npm test|yarn test|node --test|build|lint|typecheck)\b/.test(String(command ?? ''));
+  const value = String(command ?? '').trim();
+  return /^(npm|pnpm|yarn|bun)\s+(run\s+)?(test|build|lint|typecheck)\b/.test(value) ||
+    /^node\s+--test\b/.test(value) ||
+    /^cargo\s+test\b/.test(value) ||
+    /^go\s+test\b/.test(value) ||
+    /^(pytest|vitest|jest)\b/.test(value) ||
+    /^make\s+(test|build|lint)\b/.test(value);
 }
 
 export function textSummary(value, maxLength = 160) {

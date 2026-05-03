@@ -59,3 +59,29 @@ test('RunqStore redacts events before persistence', () => {
   assert.equal(stored.payload.output, '[redacted]');
   assert.equal(stored.payload.exit_code, 0);
 });
+
+test('redactEvent preserves safe numeric metadata used by scoring and cost analysis', () => {
+  const redacted = redactEvent(event({
+    command_id: 'call-1',
+    command_kind: 'shell',
+    args_hash: 'sha256:abc',
+    stdout_hash: 'sha256:def',
+    prompt_length: 120,
+    input_tokens: 1000,
+    output_tokens: 250,
+    total_tokens: 1250,
+    cache_read_tokens: 100,
+    secret_token: 'abc123'
+  }));
+
+  assert.equal(redacted.payload.command_id, 'call-1');
+  assert.equal(redacted.payload.command_kind, 'shell');
+  assert.equal(redacted.payload.args_hash, 'sha256:abc');
+  assert.equal(redacted.payload.stdout_hash, 'sha256:def');
+  assert.equal(redacted.payload.prompt_length, 120);
+  assert.equal(redacted.payload.input_tokens, 1000);
+  assert.equal(redacted.payload.output_tokens, 250);
+  assert.equal(redacted.payload.total_tokens, 1250);
+  assert.equal(redacted.payload.cache_read_tokens, 100);
+  assert.equal(redacted.payload.secret_token, '[redacted]');
+});

@@ -115,11 +115,39 @@ function loopPreventionRecommendation(events) {
   );
 }
 
+function workspaceTargetingRecommendation(events) {
+  const ended = events.find((event) => event.event_type === 'session.ended');
+  const satisfaction = [...events].reverse().find((event) => event.event_type === 'satisfaction.recorded');
+  const fileChanges = events.filter((event) => event.event_type === 'file.changed' || event.event_type === 'git.diff.summarized');
+  const exploratoryCommands = events.filter((event) =>
+    event.event_type === 'command.ended' &&
+    ['find', 'ls', 'grep', 'rg'].includes(event.payload.binary)
+  );
+
+  if (fileChanges.length > 0 || exploratoryCommands.length < 2) {
+    return null;
+  }
+  if (ended?.payload?.ended_reason !== 'error' && satisfaction?.payload?.label !== 'abandoned') {
+    return null;
+  }
+
+  return recommendation(
+    'rec_workspace_targeting',
+    'task_sizing',
+    'Constrain the agent workspace before running',
+    'The run spent effort exploring files, made no code changes, and ended without a useful result.',
+    [...exploratoryCommands.slice(0, 5), ended, satisfaction].filter(Boolean),
+    'Launch the agent from the target repo directory or pass an explicit workspace path and success command in the task prompt.',
+    0.8
+  );
+}
+
 export function recommendRunImprovements(events) {
   return [
     permissionPolicyRecommendation(events),
     verificationStrategyRecommendation(events),
     repoInstructionRecommendation(events),
-    loopPreventionRecommendation(events)
+    loopPreventionRecommendation(events),
+    workspaceTargetingRecommendation(events)
   ].filter(Boolean);
 }
