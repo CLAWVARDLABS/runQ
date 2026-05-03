@@ -17,7 +17,7 @@ Invite users who:
 
 1. Clone the repo.
 2. Run `bash scripts/install-local.sh`.
-3. Configure Claude Code or Codex hook commands from adapter docs.
+3. Configure Claude Code or Codex with `node src/cli.js init claude-code --db .runq/runq.db` or `node src/cli.js init codex --db .runq/runq.db`.
 4. Run a normal coding-agent task.
 5. Open the local Run Inbox.
 6. Export one low-confidence session bundle.
@@ -59,6 +59,21 @@ Use the generated sessions to check:
 - Accepted and abandoned satisfaction labels render correctly.
 - Failed verification and repeated command loop recommendations appear.
 - Sequential ingest avoids SQLite lock errors when agents run concurrently.
+
+## Real OpenClaw Reporter Check
+
+For local OpenClaw users, import real sessions without hand-building payloads:
+
+```bash
+npm run openclaw:reporter -- --once --db .runq/openclaw-reporter.db
+npm run inbox -- --db .runq/openclaw-reporter.db --port 4545
+```
+
+Use the imported sessions to check:
+
+- New OpenClaw `.jsonl` sessions are imported once.
+- Re-running `--once` does not duplicate events.
+- `satisfaction.recorded` influences the Run Inbox outcome score.
 
 ## What To Measure
 

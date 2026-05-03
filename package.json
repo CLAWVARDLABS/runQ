@@ -13,6 +13,7 @@
     "harness:openclaw": "node examples/openclaw-harness/run.js",
     "inbox": "node scripts/run-inbox-next.mjs",
     "inbox:legacy": "node apps/run-inbox/server.js",
+    "openclaw:reporter": "node tools/openclaw-reporter/reporter.js",
     "test": "node --test"
   },
   "engines": {

@@ -31,6 +31,14 @@ node src/cli.js sessions --db .runq/dev.db
 
 ## Claude Code Settings Example
 
+Recommended:
+
+```bash
+node src/cli.js init claude-code --db .runq/runq.db
+```
+
+Manual setup:
+
 Add command hooks to `.claude/settings.local.json`:
 
 ```json
@@ -96,4 +104,3 @@ Add command hooks to `.claude/settings.local.json`:
 ```
 
 Use `.claude/settings.local.json` for local testing so the database path is not committed.
-

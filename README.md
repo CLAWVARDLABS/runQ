@@ -38,6 +38,26 @@ Local alpha setup:
 bash scripts/install-local.sh
 ```
 
+Connect a local agent automatically:
+
+```bash
+node src/cli.js init claude-code --db .runq/runq.db
+node src/cli.js init codex --db .runq/runq.db
+```
+
+Import real OpenClaw sessions:
+
+```bash
+node src/cli.js import-openclaw ~/.openclaw/agents/main/sessions/<session-id>.jsonl --db .runq/runq.db
+```
+
+Run the lightweight OpenClaw reporter in one-shot or daemon mode:
+
+```bash
+npm run openclaw:reporter -- --once --db .runq/runq.db
+npm run openclaw:reporter -- --db .runq/runq.db
+```
+
 Ingest the sample session:
 
 ```bash
@@ -100,9 +120,6 @@ Current adapters:
 - Claude Code
 - Codex
 - OpenClaw
-
-Planned adapters:
-
 - Hermes
 
 ## Product Harnesses

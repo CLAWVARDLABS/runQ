@@ -32,6 +32,12 @@ node src/cli.js sessions --db .runq/dev.db
 
 ## Codex Notify Example
 
+Recommended:
+
+```bash
+node src/cli.js init codex --db .runq/runq.db
+```
+
 Codex supports a `notify` command that receives a JSON payload. Configure it to call the RunQ hook command and pass the JSON argument.
 
 Example `~/.codex/config.toml`:
@@ -56,4 +62,3 @@ node /absolute/path/to/runq/adapters/codex/hook.js --db /absolute/path/to/.runq/
 ```
 
 The adapter expects JSON on stdin for command hooks.
-
