@@ -7,6 +7,12 @@ import { RunInboxApp } from '../components/run-inbox/RunInboxApp.js';
 
 test('RunInboxApp renders the Next.js workbench regions and selected run quality', () => {
   const html = renderToStaticMarkup(React.createElement(RunInboxApp, {
+    setupHealth: {
+      checks: [
+        { id: 'claude-code', label: 'Claude Code', status: 'ok', summary: 'Hook configured' },
+        { id: 'codex', label: 'Codex', status: 'missing', summary: 'Run init codex' }
+      ]
+    },
     initialSessions: [{
       session_id: 'ses_next_1',
       framework: 'openclaw',
@@ -49,6 +55,9 @@ test('RunInboxApp renders the Next.js workbench regions and selected run quality
   }));
 
   assert.match(html, /Run Inbox/);
+  assert.match(html, /Setup Health/);
+  assert.match(html, /Claude Code/);
+  assert.match(html, /Hook configured/);
   assert.match(html, /Runs/);
   assert.match(html, /Timeline/);
   assert.match(html, /Quality Inspector/);

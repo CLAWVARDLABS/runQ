@@ -8,6 +8,7 @@ import { scoreRun } from './scoring.js';
 import { recommendRunImprovements } from './recommendations.js';
 import { initAgent } from './init.js';
 import { importOpenClawSessionFile } from './openclaw-session-import.js';
+import { checkSetupHealth } from './doctor.js';
 
 const runqRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -52,6 +53,7 @@ function printUsage() {
 Usage:
   runq ingest <events.json> --db <path>
   runq init <claude-code|codex> --db <path>
+  runq doctor --db <path>
   runq import-openclaw <session.jsonl> --db <path>
   runq sessions --db <path>
   runq export <session_id> --db <path>
@@ -115,6 +117,20 @@ export function main(argv = process.argv.slice(2)) {
     }
     store.close();
     console.log(`imported ${events.length} events from ${sessionPath}`);
+    return 0;
+  }
+
+  if (command === 'doctor') {
+    const homeDir = parseOption(argv, '--home', process.env.HOME);
+    const health = checkSetupHealth({ homeDir, dbPath, runqRoot });
+    if (argv.includes('--json')) {
+      console.log(JSON.stringify(health, null, 2));
+    } else {
+      console.log(`RunQ setup health: ${health.ok ? 'ok' : 'needs attention'}`);
+      for (const check of health.checks) {
+        console.log(`- ${check.label}: ${check.status} - ${check.summary}`);
+      }
+    }
     return 0;
   }
 

@@ -91,12 +91,50 @@ function RunRow({ session, selected, onSelect }) {
   ]);
 }
 
-function RunListPane({ sessions, selectedSessionId, onSelect }) {
+function setupTone(status) {
+  if (status === 'ok') return 'success';
+  if (status === 'manual') return 'info';
+  if (status === 'error') return 'danger';
+  return 'neutral';
+}
+
+function SetupHealthPane({ setupHealth }) {
+  const checks = setupHealth?.checks || [];
+  return h('section', {
+    className: 'mb-5 rounded-lg border border-runq-hairline bg-runq-surface1 p-3',
+    'data-pane': 'setup-health'
+  }, [
+    h('div', { className: 'mb-3 flex items-center justify-between gap-3', key: 'head' }, [
+      h('h2', {
+        className: 'text-[13px] font-semibold uppercase leading-tight tracking-[0.04em] text-runq-muted',
+        key: 'title'
+      }, 'Setup Health'),
+      chip(setupHealth?.ok ? 'ready' : 'check', setupHealth?.ok ? 'success' : 'neutral', 'overall')
+    ]),
+    checks.length === 0
+      ? h('p', { className: 'text-xs leading-5 text-runq-muted', key: 'empty' }, 'Setup checks are not available yet.')
+      : h('div', { className: 'grid gap-2', key: 'checks' }, checks.map((check) =>
+          h('article', {
+            className: 'rounded-md border border-runq-hairlineSoft bg-runq-canvas p-2',
+            key: check.id
+          }, [
+            h('div', { className: 'flex items-center justify-between gap-2', key: 'row' }, [
+              h('span', { className: 'text-xs font-semibold text-white', key: 'label' }, check.label),
+              chip(check.status, setupTone(check.status), 'status')
+            ]),
+            h('p', { className: 'mt-1 text-xs leading-5 text-runq-muted', key: 'summary' }, check.summary)
+          ])
+        ))
+  ]);
+}
+
+function RunListPane({ sessions, selectedSessionId, onSelect, setupHealth }) {
   return h('section', {
     className: 'min-w-0 overflow-auto border-r border-runq-hairlineSoft bg-runq-canvas p-5',
     'data-pane': 'runs',
     'aria-labelledby': 'runs-title'
   }, [
+    h(SetupHealthPane, { key: 'setup', setupHealth }),
     h('div', { className: 'mb-4 flex items-center justify-between gap-3', key: 'header' }, [
       h('h2', {
         className: 'text-[13px] font-semibold uppercase leading-tight tracking-[0.04em] text-runq-muted',
@@ -261,7 +299,7 @@ function QualityInspector({ session }) {
   ]);
 }
 
-export function RunInboxApp({ initialSessions = [], initialEvents = [] }) {
+export function RunInboxApp({ initialSessions = [], initialEvents = [], setupHealth = null }) {
   const [sessions, setSessions] = useState(initialSessions);
   const [selectedSessionId, setSelectedSessionId] = useState(initialSessions[0]?.session_id ?? null);
   const [events, setEvents] = useState(initialEvents);
@@ -301,7 +339,8 @@ export function RunInboxApp({ initialSessions = [], initialEvents = [] }) {
         key: 'runs',
         sessions,
         selectedSessionId,
-        onSelect: selectSession
+        onSelect: selectSession,
+        setupHealth
       }),
       h(TimelinePane, {
         key: 'timeline',
