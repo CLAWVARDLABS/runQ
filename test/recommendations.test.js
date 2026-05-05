@@ -50,6 +50,28 @@ test('recommendRunImprovements suggests verification strategy when changes end w
   assert.equal(recommendations[0].evidence_event_ids.includes('evt_test'), true);
 });
 
+test('recommendRunImprovements does not suggest failed-verification strategy after recovery', () => {
+  const recommendations = recommendRunImprovements([
+    event('evt_change', 'file.changed', { lines_added: 1 }),
+    event('evt_failed_test', 'command.ended', {
+      binary: 'node',
+      args_hash: 'sha256:test',
+      exit_code: 1,
+      is_verification: true
+    }),
+    event('evt_passing_test', 'command.ended', {
+      binary: 'node',
+      args_hash: 'sha256:test',
+      exit_code: 0,
+      is_verification: true
+    }),
+    event('evt_end', 'session.ended', { ended_reason: 'completed' })
+  ]);
+
+  assert.equal(recommendations.some((item) => item.category === 'verification_strategy'), false);
+});
+
+
 test('recommendRunImprovements suggests repo instructions when code changes have no verification', () => {
   const recommendations = recommendRunImprovements([
     event('evt_file', 'file.changed', { lines_added: 30 }),
@@ -100,4 +122,57 @@ test('recommendRunImprovements suggests workspace targeting when a run searches 
   ]);
 
   assert.equal(recommendations.some((item) => item.category === 'task_sizing'), true);
+});
+
+test('recommendRunImprovements suggests feedback actions for corrected, rerun, and escalated satisfaction labels', () => {
+  const corrected = recommendRunImprovements([
+    event('evt_corrected', 'satisfaction.recorded', { label: 'corrected', signal: 'manual patch required' })
+  ]);
+  const rerun = recommendRunImprovements([
+    event('evt_rerun', 'satisfaction.recorded', { label: 'rerun', signal: 'second pass needed' })
+  ]);
+  const escalated = recommendRunImprovements([
+    event('evt_escalated', 'satisfaction.recorded', { label: 'escalated', signal: 'human owner took over' })
+  ]);
+
+  assert.equal(corrected.some((item) => item.category === 'feedback_loop'), true);
+  assert.match(corrected.find((item) => item.category === 'feedback_loop').suggested_action, /correction/i);
+  assert.equal(rerun.some((item) => item.category === 'task_sizing'), true);
+  assert.equal(escalated.some((item) => item.category === 'escalation_policy'), true);
+});
+
+test('recommendRunImprovements marks recommendations as new when no feedback events exist', () => {
+  const recommendations = recommendRunImprovements([
+    event('evt_file', 'file.changed', { lines_added: 30 }),
+    event('evt_end', 'session.ended', { ended_reason: 'completed' })
+  ]);
+
+  assert.equal(recommendations[0].state.status, 'new');
+  assert.equal(recommendations[0].state.decided_at, null);
+});
+
+test('recommendRunImprovements applies the latest accept/dismiss feedback for a recommendation', () => {
+  const recommendations = recommendRunImprovements([
+    event('evt_file', 'file.changed', { lines_added: 30 }),
+    event('evt_end', 'session.ended', { ended_reason: 'completed' }),
+    {
+      ...event('evt_dismiss', 'recommendation.dismissed', {
+        recommendation_id: 'rec_repo_instruction_verification',
+        note: 'not relevant'
+      }),
+      timestamp: '2026-05-02T11:00:00.000Z'
+    },
+    {
+      ...event('evt_accept', 'recommendation.accepted', {
+        recommendation_id: 'rec_repo_instruction_verification',
+        note: 'will add CLAUDE.md'
+      }),
+      timestamp: '2026-05-02T12:00:00.000Z'
+    }
+  ]);
+
+  const repoInstruction = recommendations.find((item) => item.recommendation_id === 'rec_repo_instruction_verification');
+  assert.equal(repoInstruction.state.status, 'accepted');
+  assert.equal(repoInstruction.state.decided_at, '2026-05-02T12:00:00.000Z');
+  assert.equal(repoInstruction.state.note, 'will add CLAUDE.md');
 });

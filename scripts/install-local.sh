@@ -11,11 +11,10 @@ echo
 echo "Project: $ROOT_DIR"
 echo "DB:      $DB_PATH"
 echo
-echo "Claude Code hook command:"
-echo "node $ROOT_DIR/adapters/claude-code/hook.js --db $DB_PATH"
+echo "Configure supported local agent surfaces:"
+echo "node $ROOT_DIR/src/cli.js init all --db $DB_PATH"
 echo
-echo "Codex hook/notify command:"
-echo "node $ROOT_DIR/adapters/codex/hook.js --db $DB_PATH"
+echo "Supported surfaces: Claude Code, Codex, OpenClaw, Hermes"
 echo
 echo "Run Inbox:"
 echo "npm --prefix $ROOT_DIR run inbox -- --db $DB_PATH --port 4545"

@@ -20,10 +20,19 @@ function context(input) {
   return input.ctx ?? input.context ?? {};
 }
 
+function normalizeSessionKey(value) {
+  const raw = typeof value === 'string' ? value : '';
+  const explicitPrefix = 'agent:main:explicit:';
+  if (raw.startsWith(explicitPrefix)) {
+    return raw.slice(explicitPrefix.length);
+  }
+  return value;
+}
+
 function sessionId(input) {
   const evt = event(input);
   const ctx = context(input);
-  return evt.sessionId ??
+  return normalizeSessionKey(evt.sessionId ??
     evt.session_id ??
     ctx.sessionId ??
     ctx.session_id ??
@@ -32,13 +41,13 @@ function sessionId(input) {
     ctx.sessionKey ??
     input.runId ??
     evt.runId ??
-    'openclaw-session-unknown';
+    'openclaw-session-unknown');
 }
 
 function runId(input) {
   const evt = event(input);
   const ctx = context(input);
-  return evt.runId ?? ctx.runId ?? input.runId ?? sessionId(input);
+  return normalizeSessionKey(evt.runId ?? ctx.runId ?? input.runId ?? sessionId(input));
 }
 
 function workspaceDir(input) {
@@ -57,7 +66,7 @@ function baseEvent(input, eventType, now, privacyLevel, payload) {
       resolvedRunId,
       eventType,
       hook,
-      event(input).toolCallId ?? event(input).toolCallId ?? input.seq ?? '',
+      event(input).toolCallId ?? event(input).callId ?? input.seq ?? '',
       now
     ]),
     schema_version: runqVersion,
@@ -137,6 +146,38 @@ function llmOutput(input, now) {
     cache_read_tokens: evt.usage?.cacheRead,
     cache_write_tokens: evt.usage?.cacheWrite,
     total_tokens: evt.usage?.total
+  });
+}
+
+function modelCallStarted(input, now) {
+  const evt = event(input);
+  return baseEvent(input, 'model.call.started', now, 'metadata', {
+    provider: evt.provider,
+    model: evt.model,
+    api: evt.api,
+    transport: evt.transport,
+    call_id_hash: hash(evt.callId),
+    session_key_hash: hash(evt.sessionKey)
+  });
+}
+
+function modelCallEnded(input, now) {
+  const evt = event(input);
+  return baseEvent(input, 'model.call.ended', now, 'metadata', {
+    provider: evt.provider,
+    model: evt.model,
+    api: evt.api,
+    transport: evt.transport,
+    call_id_hash: hash(evt.callId),
+    session_key_hash: hash(evt.sessionKey),
+    duration_ms: evt.durationMs,
+    outcome: evt.outcome,
+    error_category: evt.errorCategory,
+    failure_kind: evt.failureKind,
+    request_payload_bytes: evt.requestPayloadBytes,
+    response_stream_bytes: evt.responseStreamBytes,
+    time_to_first_byte_ms: evt.timeToFirstByteMs,
+    upstream_request_id_hash: evt.upstreamRequestIdHash
   });
 }
 
@@ -268,6 +309,10 @@ export function normalizeOpenClawEvent(input, options = {}) {
       return [sessionEnded(input, now)];
     case 'agent_end':
       return [agentEnded(input, now)];
+    case 'model_call_started':
+      return [modelCallStarted(input, now)];
+    case 'model_call_ended':
+      return [modelCallEnded(input, now)];
     case 'llm_input':
       return [llmInput(input, now)];
     case 'llm_output':

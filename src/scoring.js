@@ -13,6 +13,7 @@ export function scoreRun(events) {
   const verificationCommands = commandEnded.filter((event) => event.payload.is_verification === true);
   const failedVerification = verificationCommands.filter((event) => Number(event.payload.exit_code) !== 0);
   const passedVerification = verificationCommands.filter((event) => Number(event.payload.exit_code) === 0);
+  const latestVerification = [...verificationCommands].sort((left, right) => left.timestamp.localeCompare(right.timestamp)).at(-1);
   const permissionEvents = events.filter((event) => event.event_type === 'permission.resolved');
   const sessionEnded = events.find((event) => event.event_type === 'session.ended');
   const satisfaction = [...events].reverse().find((event) => event.event_type === 'satisfaction.recorded');
@@ -24,14 +25,14 @@ export function scoreRun(events) {
   let loopRisk = 0;
   let costEfficiency = 0.5;
 
-  if (fileChanges.length > 0 && passedVerification.length > 0 && failedVerification.length === 0) {
+  if (fileChanges.length > 0 && passedVerification.length > 0 && Number(latestVerification?.payload?.exit_code) === 0) {
     outcomeConfidence = 0.9;
     verificationCoverage = 1;
     reworkRisk = 0.1;
     reasons.push('verification_passed_after_changes');
   }
 
-  if (failedVerification.length > 0 && sessionEnded) {
+  if (failedVerification.length > 0 && sessionEnded && Number(latestVerification?.payload?.exit_code) !== 0) {
     outcomeConfidence = Math.min(outcomeConfidence, 0.2);
     verificationCoverage = Math.max(verificationCoverage, 0.4);
     reworkRisk = Math.max(reworkRisk, 0.8);
@@ -93,6 +94,24 @@ export function scoreRun(events) {
     reasons.push('satisfaction_needs_review');
   }
 
+  if (satisfaction?.payload?.label === 'corrected') {
+    outcomeConfidence = Math.min(outcomeConfidence, 0.55);
+    reworkRisk = Math.max(reworkRisk, 0.65);
+    reasons.push('satisfaction_corrected');
+  }
+
+  if (satisfaction?.payload?.label === 'rerun') {
+    outcomeConfidence = Math.min(outcomeConfidence, 0.35);
+    reworkRisk = Math.max(reworkRisk, 0.7);
+    reasons.push('satisfaction_rerun');
+  }
+
+  if (satisfaction?.payload?.label === 'escalated') {
+    outcomeConfidence = Math.min(outcomeConfidence, 0.25);
+    reworkRisk = Math.max(reworkRisk, 0.8);
+    reasons.push('satisfaction_escalated');
+  }
+
   return {
     outcome_confidence: clamp(outcomeConfidence),
     verification_coverage: clamp(verificationCoverage),
@@ -100,7 +119,7 @@ export function scoreRun(events) {
     permission_friction: clamp(permissionFriction),
     loop_risk: clamp(loopRisk),
     cost_efficiency: clamp(costEfficiency),
-    score_version: '0.1.0',
+    score_version: '0.2.0',
     reasons
   };
 }

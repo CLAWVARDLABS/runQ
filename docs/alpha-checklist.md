@@ -1,14 +1,14 @@
-# Private Alpha Checklist
+# Local Alpha Release Checklist
 
 ## Goal
 
-Validate that RunQ can capture real Claude Code and Codex sessions, reconstruct timelines, and surface useful run-quality signals.
+Validate that RunQ can be released as an open source local alpha, capture real Claude Code, Codex, OpenClaw, and Hermes sessions, reconstruct timelines, and surface useful run-quality signals.
 
 ## Alpha User Profile
 
 Invite users who:
 
-- Use Claude Code or Codex daily.
+- Use Claude Code, Codex, OpenClaw, or Hermes daily.
 - Work in real repositories.
 - Are willing to share redacted session exports.
 - Care about agent reliability, not only token cost.
@@ -17,12 +17,13 @@ Invite users who:
 
 1. Clone the repo.
 2. Run `bash scripts/install-local.sh`.
-3. Configure Claude Code or Codex with `node src/cli.js init claude-code --db .runq/runq.db` or `node src/cli.js init codex --db .runq/runq.db`.
+3. Configure local agent surfaces with `node src/cli.js init all --db .runq/runq.db`, or configure one surface with `init claude-code`, `init codex`, `init openclaw`, or `init hermes`.
 4. Run `node src/cli.js doctor --db .runq/runq.db` and fix every missing check that applies to the agent being tested.
 5. Run a normal coding-agent task.
 6. Open the local Run Inbox.
 7. Search or filter the run list and timeline to confirm the captured events are inspectable.
-8. Export one low-confidence session bundle.
+8. Run `node src/cli.js readiness --db .runq/runq.db` to check public-preview readiness.
+9. Export one low-confidence session bundle.
 
 ## OpenClaw Harness Check
 
@@ -39,6 +40,50 @@ Use the output as an early product sanity check:
 - The repeated-test-failure run should show high Loop Risk.
 - The repeated-test-failure run should emit verification strategy and loop prevention recommendations.
 - Both runs should record a `satisfaction.recorded` event and match their golden product snapshots in tests.
+
+## Coding Task Harness Check
+
+Before claiming a scoring change improves coding-agent judgment, run the real coding-task harness:
+
+```bash
+npm run harness:coding-task -- --db .runq/coding-task.db --repo .runq/coding-task-repo
+node src/cli.js export coding-task-harness-bugfix --db .runq/coding-task.db
+```
+
+Use the output to check:
+
+- The first verification command fails.
+- A code file is changed.
+- The second verification command passes.
+- Outcome Confidence is high because the latest verification recovered the earlier failure.
+- Redaction stores command output hashes, not raw command output.
+
+## v0.2 Release Check
+
+Before tagging or presenting v0.2 local alpha, run the full open source release gate:
+
+```bash
+npm test
+npm run build
+npm run test:e2e
+npm run release-check
+npm audit --omit=dev
+env npm_config_cache=.tmp/npm-cache npm pack --dry-run
+```
+
+Use the output to check:
+
+- Unit, component, and CLI tests pass.
+- The Next.js production build completes.
+- Browser E2E covers the primary Agent -> Sessions -> Evaluations -> Traces -> Recommendations -> Setup -> Docs flow.
+- Browser E2E confirms mobile width does not horizontally overflow.
+- `ok` is `true`.
+- OpenClaw verified-success is accepted and high confidence.
+- OpenClaw repeated-failure emits verification strategy and loop-prevention recommendations.
+- Coding-task recovery has command statuses `[1, 0]`, high confidence, and no stale failed-verification recommendation.
+- Usable timeline coverage is at least 80 percent.
+- Secret-like payload findings are zero.
+- `npm pack --dry-run` contains only intended open source package files.
 
 ## Agent Manager Check
 
@@ -59,6 +104,7 @@ Use the generated sessions to check:
 
 - Multiple agents appear in the Run list.
 - Accepted and abandoned satisfaction labels render correctly.
+- Corrected, rerun, and escalated satisfaction labels change scoring and recommendations correctly.
 - Failed verification and repeated command loop recommendations appear.
 - Sequential ingest avoids SQLite lock errors when agents run concurrently.
 
@@ -89,8 +135,8 @@ node src/cli.js doctor --db .runq/runq.db
 Use the output to check:
 
 - Claude Code and Codex missing hooks include exact `init` commands.
-- OpenClaw missing sessions include the reporter command.
-- Hermes shows the adapter path and remains manual until its hook contract is confirmed.
+- OpenClaw detects the native `runq-reporter` plugin when installed and otherwise shows reporter/import remediation.
+- Hermes detects the RunQ hook manifest when installed and otherwise shows the adapter path.
 - The Run Inbox Setup Health panel mirrors the CLI status.
 
 ## Redaction Check
@@ -120,3 +166,4 @@ RunQ is ready for a public developer preview when:
 - At least 80 percent of sessions reconstruct a usable timeline.
 - At least 3 users act on one recommendation.
 - No sensitive-data leak is found in default metadata mode.
+- `node src/cli.js readiness --db .runq/runq.db --json` reports `ready_for_public_preview: true`.

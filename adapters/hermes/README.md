@@ -14,6 +14,12 @@ This adapter converts Hermes-style agent lifecycle, model, and command payloads 
 
 ## Local Usage
 
+Write a RunQ hook manifest:
+
+```bash
+node src/cli.js init hermes --db .runq/runq.db
+```
+
 ```bash
 echo '{"type":"session.started","session_id":"demo","agent":"hermes-dev","cwd":"/repo"}' \
   | node adapters/hermes/hook.js --db .runq/dev.db
