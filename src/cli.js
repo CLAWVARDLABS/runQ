@@ -6,9 +6,11 @@ import { fileURLToPath } from 'node:url';
 import { RunqStore } from './store.js';
 import { scoreRun } from './scoring.js';
 import { recommendRunImprovements } from './recommendations.js';
+import { recordRecommendationFeedback } from './recommendation-feedback.js';
 import { initAgent } from './init.js';
 import { importOpenClawSessionFile } from './openclaw-session-import.js';
 import { checkSetupHealth } from './doctor.js';
+import { createReadinessReport } from './readiness.js';
 
 const runqRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -52,11 +54,14 @@ function printUsage() {
 
 Usage:
   runq ingest <events.json> --db <path>
-  runq init <claude-code|codex> --db <path>
+  runq init <all|claude-code|codex|openclaw|hermes> --db <path>
   runq doctor --db <path>
   runq import-openclaw <session.jsonl> --db <path>
+  runq readiness --db <path>
   runq sessions --db <path>
   runq export <session_id> --db <path>
+  runq accept-recommendation <session_id> <recommendation_id> [--note <text>] --db <path>
+  runq dismiss-recommendation <session_id> <recommendation_id> [--note <text>] --db <path>
 `);
 }
 
@@ -96,7 +101,10 @@ export function main(argv = process.argv.slice(2)) {
     const homeDir = parseOption(argv, '--home', process.env.HOME);
     try {
       const result = initAgent(target, { homeDir, dbPath, runqRoot });
-      console.log(`configured ${result.target}: ${result.path}`);
+      const results = Array.isArray(result) ? result : [result];
+      for (const item of results) {
+        console.log(`configured ${item.target}: ${item.path}`);
+      }
       return 0;
     } catch (error) {
       console.error(error.message);
@@ -143,6 +151,40 @@ export function main(argv = process.argv.slice(2)) {
     store.close();
     console.log(JSON.stringify(sessions, null, 2));
     return 0;
+  }
+
+  if (command === 'readiness') {
+    const report = createReadinessReport({ dbPath });
+    if (argv.includes('--json')) {
+      console.log(JSON.stringify(report, null, 2));
+    } else {
+      console.log(`RunQ v0.2 readiness: ${report.ready_for_public_preview ? 'ready' : 'not ready'}`);
+      console.log(`- Sessions: ${report.sessions.total}`);
+      console.log(`- Usable timelines: ${Math.round(report.sessions.usable_timeline_percent * 100)}% (${report.sessions.usable_timeline_count}/${report.sessions.total})`);
+      console.log(`- Secret-like payload findings: ${report.redaction.secret_like_payload_findings.length}`);
+    }
+    return 0;
+  }
+
+  if (command === 'accept-recommendation' || command === 'dismiss-recommendation') {
+    const [sessionId, recommendationId] = args;
+    if (!sessionId || !recommendationId) {
+      console.error('Usage: runq <accept-recommendation|dismiss-recommendation> <session_id> <recommendation_id> [--note <text>] --db <path>');
+      return 1;
+    }
+    const note = parseOption(argv, '--note', null);
+    const decision = command === 'accept-recommendation' ? 'accepted' : 'dismissed';
+    const store = new RunqStore(dbPath);
+    try {
+      const event = recordRecommendationFeedback(store, { sessionId, recommendationId, decision, note });
+      console.log(`${decision} ${recommendationId} for ${sessionId} (${event.event_id})`);
+      return 0;
+    } catch (error) {
+      console.error(error.message);
+      return 1;
+    } finally {
+      store.close();
+    }
   }
 
   if (command === 'export') {

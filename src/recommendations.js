@@ -47,9 +47,16 @@ function verificationStrategyRecommendation(events) {
     event.payload.is_verification === true &&
     Number(event.payload.exit_code) !== 0
   );
+  const latestVerification = events
+    .filter((event) => event.event_type === 'command.ended' && event.payload.is_verification === true)
+    .sort((left, right) => left.timestamp.localeCompare(right.timestamp))
+    .at(-1);
   const ended = events.find((event) => event.event_type === 'session.ended');
 
   if (fileChanges.length === 0 || failedVerification.length === 0 || !ended) {
+    return null;
+  }
+  if (Number(latestVerification?.payload?.exit_code) === 0) {
     return null;
   }
 
@@ -142,12 +149,77 @@ function workspaceTargetingRecommendation(events) {
   );
 }
 
+function satisfactionFeedbackRecommendation(events) {
+  const satisfaction = [...events].reverse().find((event) => event.event_type === 'satisfaction.recorded');
+  const label = satisfaction?.payload?.label;
+
+  if (label === 'corrected') {
+    return recommendation(
+      'rec_feedback_correction_capture',
+      'feedback_loop',
+      'Capture the manual correction as training signal',
+      'The user corrected the agent output after the run.',
+      [satisfaction],
+      'Record the correction summary, expected files, and verification command so future agents can compare against the human fix.',
+      0.75
+    );
+  }
+
+  if (label === 'rerun') {
+    return recommendation(
+      'rec_feedback_rerun_scope',
+      'task_sizing',
+      'Split or constrain tasks that require reruns',
+      'The user needed another agent pass after this run.',
+      [satisfaction],
+      'Break the next task into a smaller success condition with an explicit verification command before launching another run.',
+      0.7
+    );
+  }
+
+  if (label === 'escalated') {
+    return recommendation(
+      'rec_feedback_escalation_policy',
+      'escalation_policy',
+      'Add an escalation rule for this failure mode',
+      'The run required human ownership instead of another autonomous pass.',
+      [satisfaction],
+      'Define when the agent should stop and ask for human review, including the error class, touched subsystem, and handoff checklist.',
+      0.8
+    );
+  }
+
+  return null;
+}
+
+function feedbackStateFor(events, recommendationId) {
+  const feedback = events
+    .filter((event) =>
+      (event.event_type === 'recommendation.accepted' || event.event_type === 'recommendation.dismissed') &&
+      event.payload?.recommendation_id === recommendationId
+    )
+    .sort((left, right) => left.timestamp.localeCompare(right.timestamp))
+    .at(-1);
+
+  if (!feedback) {
+    return { status: 'new', decided_at: null, note: null };
+  }
+  return {
+    status: feedback.event_type === 'recommendation.accepted' ? 'accepted' : 'dismissed',
+    decided_at: feedback.timestamp,
+    note: feedback.payload?.note ?? null
+  };
+}
+
 export function recommendRunImprovements(events) {
   return [
     permissionPolicyRecommendation(events),
     verificationStrategyRecommendation(events),
     repoInstructionRecommendation(events),
     loopPreventionRecommendation(events),
-    workspaceTargetingRecommendation(events)
-  ].filter(Boolean);
+    workspaceTargetingRecommendation(events),
+    satisfactionFeedbackRecommendation(events)
+  ]
+    .filter(Boolean)
+    .map((rec) => ({ ...rec, state: feedbackStateFor(events, rec.recommendation_id) }));
 }

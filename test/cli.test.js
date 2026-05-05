@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 
@@ -78,6 +78,77 @@ test('CLI prints an error for unknown commands', () => {
 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Unknown command: unknown/);
+});
+
+test('CLI accept-recommendation records a recommendation.accepted event for the session', () => {
+  const dir = tempDir();
+  const dbPath = join(dir, 'runq.db');
+  const eventsPath = join(dir, 'events.json');
+  writeFileSync(eventsPath, JSON.stringify([
+    makeEvent('evt_cli_1', 'session.started', '2026-05-02T10:00:00.000Z'),
+    {
+      ...makeEvent('evt_cli_file', 'file.changed', '2026-05-02T10:01:00.000Z'),
+      payload: { lines_added: 3 }
+    },
+    makeEvent('evt_cli_2', 'session.ended', '2026-05-02T10:05:00.000Z')
+  ]));
+
+  const ingest = spawnSync(process.execPath, [cliPath, 'ingest', eventsPath, '--db', dbPath], { encoding: 'utf8' });
+  assert.equal(ingest.status, 0, ingest.stderr);
+
+  const accept = spawnSync(process.execPath, [
+    cliPath,
+    'accept-recommendation',
+    'ses_cli_1',
+    'rec_repo_instruction_verification',
+    '--note',
+    'will document tests',
+    '--db',
+    dbPath
+  ], { encoding: 'utf8' });
+  assert.equal(accept.status, 0, accept.stderr);
+  assert.match(accept.stdout, /accepted rec_repo_instruction_verification/);
+
+  const exported = spawnSync(process.execPath, [cliPath, 'export', 'ses_cli_1', '--db', dbPath], { encoding: 'utf8' });
+  const bundle = JSON.parse(exported.stdout);
+  const feedback = bundle.events.find((event) => event.event_type === 'recommendation.accepted');
+  assert.ok(feedback, 'recommendation.accepted event should exist');
+  assert.equal(feedback.payload.recommendation_id, 'rec_repo_instruction_verification');
+  assert.equal(feedback.payload.note, 'will document tests');
+
+  const repo = bundle.recommendations.find((rec) => rec.recommendation_id === 'rec_repo_instruction_verification');
+  assert.equal(repo.state.status, 'accepted');
+});
+
+test('CLI dismiss-recommendation records a recommendation.dismissed event for the session', () => {
+  const dir = tempDir();
+  const dbPath = join(dir, 'runq.db');
+  const eventsPath = join(dir, 'events.json');
+  writeFileSync(eventsPath, JSON.stringify([
+    makeEvent('evt_cli_1', 'session.started', '2026-05-02T10:00:00.000Z'),
+    {
+      ...makeEvent('evt_cli_file', 'file.changed', '2026-05-02T10:01:00.000Z'),
+      payload: { lines_added: 3 }
+    },
+    makeEvent('evt_cli_2', 'session.ended', '2026-05-02T10:05:00.000Z')
+  ]));
+  const ingest = spawnSync(process.execPath, [cliPath, 'ingest', eventsPath, '--db', dbPath], { encoding: 'utf8' });
+  assert.equal(ingest.status, 0, ingest.stderr);
+
+  const dismiss = spawnSync(process.execPath, [
+    cliPath,
+    'dismiss-recommendation',
+    'ses_cli_1',
+    'rec_repo_instruction_verification',
+    '--db',
+    dbPath
+  ], { encoding: 'utf8' });
+  assert.equal(dismiss.status, 0, dismiss.stderr);
+
+  const exported = spawnSync(process.execPath, [cliPath, 'export', 'ses_cli_1', '--db', dbPath], { encoding: 'utf8' });
+  const bundle = JSON.parse(exported.stdout);
+  const repo = bundle.recommendations.find((rec) => rec.recommendation_id === 'rec_repo_instruction_verification');
+  assert.equal(repo.state.status, 'dismissed');
 });
 
 test('CLI exports a session bundle as JSON', () => {
@@ -168,6 +239,137 @@ test('CLI init writes Codex notify config while preserving existing TOML', () =>
   assert.match(config, /model = "gpt-5\.2-codex"/);
   assert.match(config, /notify = \[/);
   assert.match(config, /adapters\/codex\/hook\.js/);
+});
+
+test('CLI init writes OpenClaw plugin package and enables prompt hook access', () => {
+  const dir = tempDir();
+  const dbPath = join(dir, 'runq.db');
+  const openclawDir = join(dir, '.openclaw');
+  mkdirSync(openclawDir, { recursive: true });
+  writeFileSync(join(openclawDir, 'openclaw.json'), JSON.stringify({
+    plugins: {
+      allow: ['existing-plugin'],
+      load: {
+        paths: ['/existing/plugin']
+      }
+    }
+  }, null, 2));
+
+  const result = spawnSync(process.execPath, [
+    cliPath,
+    'init',
+    'openclaw',
+    '--home',
+    dir,
+    '--db',
+    dbPath
+  ], {
+    encoding: 'utf8'
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /configured openclaw/);
+
+  const pluginRoot = join(openclawDir, 'extensions', 'runq-reporter');
+  assert.equal(existsSync(join(pluginRoot, 'package.json')), true);
+  assert.equal(existsSync(join(pluginRoot, 'openclaw.plugin.json')), true);
+  assert.equal(existsSync(join(pluginRoot, 'index.cjs')), true);
+  const manifest = JSON.parse(readFileSync(join(pluginRoot, 'openclaw.plugin.json'), 'utf8'));
+  assert.equal(manifest.id, 'runq-reporter');
+  assert.equal(manifest.configSchema.additionalProperties, false);
+  const plugin = readFileSync(join(pluginRoot, 'index.cjs'), 'utf8');
+  assert.match(plugin, /spawnSync/);
+  assert.match(plugin, /api\.on\("model_call_started"/);
+  assert.match(plugin, /api\.on\("model_call_ended"/);
+  assert.match(plugin, /api\.on\("llm_input"/);
+  assert.doesNotMatch(plugin, /api\.on\("tool_result_persist"/);
+  assert.match(plugin, new RegExp(dbPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+
+  const config = JSON.parse(readFileSync(join(openclawDir, 'openclaw.json'), 'utf8'));
+  assert.equal(config.plugins.enabled, true);
+  assert.deepEqual(config.plugins.allow, ['existing-plugin', 'runq-reporter']);
+  assert.deepEqual(config.plugins.load.paths, ['/existing/plugin', pluginRoot]);
+  assert.equal(config.plugins.entries['runq-reporter'].hooks.allowPromptInjection, true);
+  assert.equal('allowConversationAccess' in config.plugins.entries['runq-reporter'].hooks, false);
+});
+
+test('CLI init resolves relative database paths before writing agent hooks', () => {
+  const dir = tempDir();
+  const result = spawnSync(process.execPath, [
+    cliPath,
+    'init',
+    'all',
+    '--home',
+    dir,
+    '--db',
+    '.runq/relative.db'
+  ], {
+    cwd: new URL('..', import.meta.url).pathname,
+    encoding: 'utf8'
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const expectedDbPath = resolve(new URL('..', import.meta.url).pathname, '.runq/relative.db');
+  const openclawPlugin = readFileSync(join(dir, '.openclaw', 'extensions', 'runq-reporter', 'index.cjs'), 'utf8');
+  const codexConfig = readFileSync(join(dir, '.codex', 'config.toml'), 'utf8');
+  const hermesManifest = JSON.parse(readFileSync(join(dir, '.hermes', 'hooks', 'runq.json'), 'utf8'));
+  assert.match(openclawPlugin, new RegExp(expectedDbPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(codexConfig, new RegExp(expectedDbPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.deepEqual(hermesManifest.command.slice(-2), ['--db', expectedDbPath]);
+});
+
+test('CLI init writes Hermes hook command manifest', () => {
+  const dir = tempDir();
+  const dbPath = join(dir, 'runq.db');
+  const result = spawnSync(process.execPath, [
+    cliPath,
+    'init',
+    'hermes',
+    '--home',
+    dir,
+    '--db',
+    dbPath
+  ], {
+    encoding: 'utf8'
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /configured hermes/);
+
+  const manifestPath = join(dir, '.hermes', 'hooks', 'runq.json');
+  assert.equal(existsSync(manifestPath), true);
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  assert.equal(manifest.name, 'runq');
+  assert.deepEqual(manifest.command.slice(0, 3), ['node', manifest.command[1], '--db']);
+  assert.match(manifest.command[1], /adapters\/hermes\/hook\.js/);
+  assert.equal(manifest.command[3], dbPath);
+  assert.equal(manifest.events.includes('command.finished'), true);
+});
+
+test('CLI init all configures every supported local agent surface', () => {
+  const dir = tempDir();
+  const dbPath = join(dir, 'runq.db');
+  const result = spawnSync(process.execPath, [
+    cliPath,
+    'init',
+    'all',
+    '--home',
+    dir,
+    '--db',
+    dbPath
+  ], {
+    encoding: 'utf8'
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /configured claude-code/);
+  assert.match(result.stdout, /configured codex/);
+  assert.match(result.stdout, /configured openclaw/);
+  assert.match(result.stdout, /configured hermes/);
+  assert.equal(existsSync(join(dir, '.claude', 'settings.local.json')), true);
+  assert.equal(existsSync(join(dir, '.codex', 'config.toml')), true);
+  assert.equal(existsSync(join(dir, '.openclaw', 'extensions', 'runq-reporter', 'index.cjs')), true);
+  assert.equal(existsSync(join(dir, '.hermes', 'hooks', 'runq.json')), true);
 });
 
 test('CLI import-openclaw converts a session jsonl into RunQ events', () => {

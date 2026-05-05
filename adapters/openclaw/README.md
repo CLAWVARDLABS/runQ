@@ -37,6 +37,19 @@ node src/cli.js sessions --db .runq/dev.db
 
 ## OpenClaw Plugin Shape
 
+Install the RunQ-managed plugin package and config merge:
+
+```bash
+node src/cli.js init openclaw --db .runq/runq.db
+```
+
+This writes `~/.openclaw/extensions/runq-reporter` and updates `~/.openclaw/openclaw.json` with:
+
+- `openclaw.plugin.json` declaring the `runq-reporter` plugin manifest.
+- `plugins.load.paths[]` pointing at the plugin package.
+- `plugins.allow[]` including `runq-reporter`.
+- `plugins.entries.runq-reporter.hooks.allowPromptInjection: true`.
+
 In an OpenClaw plugin, call the RunQ hook with the hook name, event payload, and hook context:
 
 ```js

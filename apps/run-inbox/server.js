@@ -2,6 +2,8 @@
 import http from 'node:http';
 
 import { getRunInboxEvents, getRunInboxSessions } from '../../src/run-inbox-data.js';
+import { RunqStore } from '../../src/store.js';
+import { recordRecommendationFeedback } from '../../src/recommendation-feedback.js';
 
 function sendJson(response, status, body) {
   response.writeHead(status, {
@@ -636,6 +638,26 @@ function htmlShell() {
 </html>`;
 }
 
+function readJsonBody(request) {
+  return new Promise((resolve) => {
+    let body = '';
+    request.on('data', (chunk) => {
+      body += chunk;
+    });
+    request.on('end', () => {
+      if (!body) {
+        resolve({});
+        return;
+      }
+      try {
+        resolve(JSON.parse(body));
+      } catch {
+        resolve({});
+      }
+    });
+  });
+}
+
 export function handleRunInboxRequest({ dbPath }, request, response) {
     const url = new URL(request.url, 'http://127.0.0.1');
 
@@ -653,6 +675,27 @@ export function handleRunInboxRequest({ dbPath }, request, response) {
     if (request.method === 'GET' && sessionEventsMatch) {
       const sessionId = decodeURIComponent(sessionEventsMatch[1]);
       sendJson(response, 200, getRunInboxEvents(sessionId, dbPath));
+      return;
+    }
+
+    const feedbackMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/recommendations\/([^/]+)\/feedback$/);
+    if (request.method === 'POST' && feedbackMatch) {
+      readJsonBody(request).then((body) => {
+        const store = new RunqStore(dbPath);
+        try {
+          const event = recordRecommendationFeedback(store, {
+            sessionId: decodeURIComponent(feedbackMatch[1]),
+            recommendationId: decodeURIComponent(feedbackMatch[2]),
+            decision: body?.decision,
+            note: body?.note ?? null
+          });
+          sendJson(response, 200, { ok: true, event_id: event.event_id, event_type: event.event_type });
+        } catch (error) {
+          sendJson(response, 400, { ok: false, error: error.message });
+        } finally {
+          store.close();
+        }
+      });
       return;
     }
 

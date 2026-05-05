@@ -15,6 +15,8 @@ test('checkSetupHealth reports configured Claude Code, Codex, OpenClaw, and Herm
   mkdirSync(join(dir, '.claude'), { recursive: true });
   mkdirSync(join(dir, '.codex'), { recursive: true });
   mkdirSync(join(dir, '.openclaw', 'agents', 'main', 'sessions'), { recursive: true });
+  mkdirSync(join(dir, '.openclaw', 'extensions', 'runq-reporter'), { recursive: true });
+  mkdirSync(join(dir, '.hermes', 'hooks'), { recursive: true });
   writeFileSync(join(dir, '.claude', 'settings.local.json'), JSON.stringify({
     hooks: {
       SessionStart: [{ hooks: [{ command: 'node /repo/runq/adapters/claude-code/hook.js --db /tmp/runq.db' }] }]
@@ -22,6 +24,21 @@ test('checkSetupHealth reports configured Claude Code, Codex, OpenClaw, and Herm
   }));
   writeFileSync(join(dir, '.codex', 'config.toml'), 'notify = ["node", "/repo/runq/adapters/codex/hook.js"]\n');
   writeFileSync(join(dir, '.openclaw', 'agents', 'main', 'sessions', 's1.jsonl'), '{}\n');
+  writeFileSync(join(dir, '.openclaw', 'extensions', 'runq-reporter', 'index.cjs'), 'api.on("llm_input", () => {})\n');
+  writeFileSync(join(dir, '.openclaw', 'openclaw.json'), JSON.stringify({
+    plugins: {
+      allow: ['runq-reporter'],
+      load: { paths: [join(dir, '.openclaw', 'extensions', 'runq-reporter')] },
+      entries: {
+        'runq-reporter': {
+          hooks: { allowPromptInjection: true }
+        }
+      }
+    }
+  }));
+  writeFileSync(join(dir, '.hermes', 'hooks', 'runq.json'), JSON.stringify({
+    command: ['node', '/repo/runq/adapters/hermes/hook.js', '--db', '/tmp/runq.db']
+  }));
 
   const health = checkSetupHealth({
     homeDir: dir,
@@ -30,11 +47,17 @@ test('checkSetupHealth reports configured Claude Code, Codex, OpenClaw, and Herm
   });
 
   assert.equal(health.ok, true);
+  assert.equal(health.checks.find((check) => check.id === 'node')?.agent_id, undefined);
+  assert.equal(health.checks.find((check) => check.id === 'database')?.agent_id, undefined);
+  assert.equal(health.checks.find((check) => check.id === 'claude-code')?.agent_id, 'claude_code');
   assert.equal(health.checks.find((check) => check.id === 'claude-code')?.status, 'ok');
+  assert.equal(health.checks.find((check) => check.id === 'codex')?.agent_id, 'codex');
   assert.equal(health.checks.find((check) => check.id === 'codex')?.status, 'ok');
+  assert.equal(health.checks.find((check) => check.id === 'openclaw')?.agent_id, 'openclaw');
   assert.equal(health.checks.find((check) => check.id === 'openclaw')?.status, 'ok');
-  assert.equal(health.checks.find((check) => check.id === 'hermes')?.status, 'manual');
-  assert.match(health.checks.find((check) => check.id === 'hermes')?.remediation, /adapters\/hermes\/hook\.js/);
+  assert.match(health.checks.find((check) => check.id === 'openclaw')?.summary, /Native plugin configured/);
+  assert.equal(health.checks.find((check) => check.id === 'hermes')?.agent_id, 'hermes');
+  assert.equal(health.checks.find((check) => check.id === 'hermes')?.status, 'ok');
 });
 
 test('CLI doctor prints setup health JSON', () => {

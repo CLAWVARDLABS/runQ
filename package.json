@@ -1,20 +1,62 @@
 {
   "name": "runq",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Open protocol and local collector for coding-agent run quality.",
   "type": "module",
+  "homepage": "https://github.com/THEZIONLABS/runQ#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/THEZIONLABS/runQ.git"
+  },
+  "bugs": {
+    "url": "https://github.com/THEZIONLABS/runQ/issues"
+  },
+  "keywords": [
+    "agent-observability",
+    "coding-agents",
+    "ai-agents",
+    "otel",
+    "opentelemetry",
+    "sqlite",
+    "run-quality",
+    "developer-tools"
+  ],
   "bin": {
     "runq": "./src/cli.js"
   },
+  "files": [
+    "adapters/",
+    "app/",
+    "apps/",
+    "components/",
+    "docs/*.md",
+    "examples/",
+    "protocol/",
+    "scripts/",
+    "src/",
+    "tools/",
+    "CHANGELOG.md",
+    "CODE_OF_CONDUCT.md",
+    "CONTRIBUTING.md",
+    "LICENSE",
+    "README.md",
+    "RELEASE.md",
+    "SECURITY.md",
+    "SUPPORT.md"
+  ],
   "scripts": {
     "agent-manager": "node tools/agent-manager/manager.js",
     "build": "next build",
     "dev": "next dev",
+    "harness:coding-task": "node examples/coding-task-harness/run.js",
     "harness:openclaw": "node examples/openclaw-harness/run.js",
     "inbox": "node scripts/run-inbox-next.mjs",
     "inbox:legacy": "node apps/run-inbox/server.js",
+    "openclaw:docker-e2e": "docker build -f tools/openclaw-docker-e2e/Dockerfile -t runq-openclaw-e2e:local . && docker run --rm -e OPENCLAW_E2E_API_KEY -e OPENCLAW_E2E_BASE_URL -e OPENCLAW_E2E_PROVIDER -e OPENCLAW_E2E_MODEL -v \"$PWD/.runq/docker-openclaw:/runq\" runq-openclaw-e2e:local",
     "openclaw:reporter": "node tools/openclaw-reporter/reporter.js",
-    "test": "node --test"
+    "release-check": "node scripts/release-check.mjs",
+    "test": "node --test",
+    "test:e2e": "playwright test"
   },
   "engines": {
     "node": ">=22.5.0"
@@ -30,5 +72,8 @@
   },
   "overrides": {
     "postcss": "^8.5.13"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1"
   }
 }

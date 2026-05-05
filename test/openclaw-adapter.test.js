@@ -84,6 +84,61 @@ test('normalizeOpenClawEvent maps llm hooks to model call events', () => {
   assert.equal(ended.payload.output_tokens, 240);
 });
 
+test('normalizeOpenClawEvent maps OpenClaw model_call hooks to model call events', () => {
+  const [started] = normalizeOpenClawEvent({
+    hook: 'model_call_started',
+    event: {
+      runId: 'run-openclaw-latest',
+      sessionId: 'openclaw-session-latest',
+      callId: 'call_123',
+      provider: 'openai-compatible',
+      model: 'MiniMax-M2.7',
+      api: 'chat.completions',
+      transport: 'stream'
+    },
+    ctx: {
+      agentId: 'devbot',
+      workspaceDir: '/repo/app'
+    }
+  }, {
+    now: '2026-05-03T01:01:00.000Z'
+  });
+
+  const [ended] = normalizeOpenClawEvent({
+    hook: 'model_call_ended',
+    event: {
+      runId: 'run-openclaw-latest',
+      sessionId: 'openclaw-session-latest',
+      callId: 'call_123',
+      provider: 'openai-compatible',
+      model: 'MiniMax-M2.7',
+      api: 'chat.completions',
+      transport: 'stream',
+      outcome: 'completed',
+      durationMs: 1234,
+      requestPayloadBytes: 1024,
+      responseStreamBytes: 2048,
+      timeToFirstByteMs: 321
+    },
+    ctx: {
+      agentId: 'devbot',
+      workspaceDir: '/repo/app'
+    }
+  }, {
+    now: '2026-05-03T01:02:00.000Z'
+  });
+
+  assert.equal(started.event_type, 'model.call.started');
+  assert.equal(started.payload.provider, 'openai-compatible');
+  assert.equal(started.payload.model, 'MiniMax-M2.7');
+  assert.equal(started.payload.call_id_hash.startsWith('sha256:'), true);
+  assert.equal(started.payload.api, 'chat.completions');
+  assert.equal(ended.event_type, 'model.call.ended');
+  assert.equal(ended.payload.duration_ms, 1234);
+  assert.equal(ended.payload.outcome, 'completed');
+  assert.equal(ended.payload.response_stream_bytes, 2048);
+});
+
 test('normalizeOpenClawEvent maps system.run tool hooks to command events', () => {
   const [started] = normalizeOpenClawEvent({
     hook: 'before_tool_call',
@@ -135,6 +190,87 @@ test('normalizeOpenClawEvent maps system.run tool hooks to command events', () =
   assert.equal(ended.event_type, 'command.ended');
   assert.equal(ended.payload.exit_code, 1);
   assert.equal(ended.payload.duration_ms, 2500);
+});
+
+test('normalizeOpenClawEvent maps latest OpenClaw exec tool hooks to command events', () => {
+  const [started] = normalizeOpenClawEvent({
+    hook: 'before_tool_call',
+    event: {
+      toolName: 'exec',
+      toolCallId: 'exec_123',
+      runId: 'run-openclaw-2',
+      params: {
+        cmd: 'node -e "console.log(42)"'
+      }
+    },
+    ctx: {
+      sessionId: 'openclaw-session-2',
+      runId: 'run-openclaw-2',
+      toolName: 'exec',
+      toolCallId: 'exec_123'
+    }
+  }, {
+    now: '2026-05-03T01:05:00.000Z'
+  });
+
+  const [ended] = normalizeOpenClawEvent({
+    hook: 'after_tool_call',
+    event: {
+      toolName: 'exec',
+      toolCallId: 'exec_123',
+      runId: 'run-openclaw-2',
+      params: {
+        cmd: 'node -e "console.log(42)"'
+      },
+      result: {
+        exitCode: 0,
+        stdout: '42\n'
+      },
+      durationMs: 300
+    },
+    ctx: {
+      sessionId: 'openclaw-session-2',
+      runId: 'run-openclaw-2',
+      toolName: 'exec',
+      toolCallId: 'exec_123'
+    }
+  }, {
+    now: '2026-05-03T01:06:00.000Z'
+  });
+
+  assert.equal(started.event_type, 'command.started');
+  assert.equal(started.payload.command_id, 'exec_123');
+  assert.equal(started.payload.binary, 'node');
+  assert.equal(ended.event_type, 'command.ended');
+  assert.equal(ended.payload.exit_code, 0);
+  assert.equal(ended.payload.duration_ms, 300);
+});
+
+test('normalizeOpenClawEvent resolves explicit OpenClaw session keys to the underlying session id', () => {
+  const [event] = normalizeOpenClawEvent({
+    hook: 'after_tool_call',
+    event: {
+      toolName: 'exec',
+      toolCallId: 'exec_456',
+      params: {
+        cmd: 'node --version'
+      },
+      result: {
+        exitCode: 0
+      }
+    },
+    ctx: {
+      sessionKey: 'agent:main:explicit:runq-docker-openclaw-123',
+      runId: 'runq-docker-openclaw-123',
+      toolName: 'exec',
+      toolCallId: 'exec_456'
+    }
+  }, {
+    now: '2026-05-03T01:07:00.000Z'
+  });
+
+  assert.equal(event.session_id, 'runq-docker-openclaw-123');
+  assert.equal(event.run_id, 'runq-docker-openclaw-123');
 });
 
 test('normalizeOpenClawEvent maps node exec.finished agent event to command.ended', () => {

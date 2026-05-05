@@ -23,7 +23,7 @@
       "permission_friction": 0,
       "loop_risk": 0,
       "cost_efficiency": 0.5,
-      "score_version": "0.1.0",
+      "score_version": "0.2.0",
       "reasons": [
         "verification_passed_after_changes",
         "satisfaction_accepted"

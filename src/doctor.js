@@ -52,12 +52,42 @@ function checkCodex(homeDir) {
 }
 
 function checkOpenClaw(homeDir) {
+  const pluginPath = join(homeDir, '.openclaw', 'extensions', 'runq-reporter', 'index.cjs');
+  const configPath = join(homeDir, '.openclaw', 'openclaw.json');
+  if (existsSync(pluginPath) && existsSync(configPath)) {
+    try {
+      const config = JSON.parse(readFileSync(configPath, 'utf8'));
+      const pluginRoot = join(homeDir, '.openclaw', 'extensions', 'runq-reporter');
+      const allow = config.plugins?.allow ?? [];
+      const paths = config.plugins?.load?.paths ?? [];
+      const promptHooksAllowed =
+        config.plugins?.entries?.['runq-reporter']?.hooks?.allowPromptInjection === true;
+      if (
+        allow.includes('runq-reporter') &&
+        paths.includes(pluginRoot) &&
+        promptHooksAllowed
+      ) {
+        return {
+          status: 'ok',
+          summary: `Native plugin configured: ${pluginPath}`,
+          remediation: 'No action needed.'
+        };
+      }
+    } catch {
+      return {
+        status: 'missing',
+        summary: `OpenClaw RunQ plugin exists but openclaw.json is not valid JSON: ${configPath}`,
+        remediation: 'node src/cli.js init openclaw --db .runq/runq.db'
+      };
+    }
+  }
+
   const sessionsDir = join(homeDir, '.openclaw', 'agents', 'main', 'sessions');
   if (!existsSync(sessionsDir)) {
     return {
       status: 'missing',
       summary: 'OpenClaw session directory was not found',
-      remediation: 'Start OpenClaw once, then run npm run openclaw:reporter -- --once --db .runq/runq.db'
+      remediation: 'node src/cli.js init openclaw --db .runq/runq.db'
     };
   }
   const count = readdirSync(sessionsDir).filter((name) => name.endsWith('.jsonl')).length;
@@ -68,7 +98,27 @@ function checkOpenClaw(homeDir) {
   };
 }
 
-function checkHermes(runqRoot) {
+function checkHermes(runqRoot, homeDir) {
+  const manifestPath = join(homeDir, '.hermes', 'hooks', 'runq.json');
+  if (existsSync(manifestPath)) {
+    try {
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+      const command = Array.isArray(manifest.command) ? manifest.command.join(' ') : '';
+      if (command.includes('adapters/hermes/hook.js')) {
+        return {
+          status: 'ok',
+          summary: `Hook manifest configured: ${manifestPath}`,
+          remediation: 'No action needed.'
+        };
+      }
+    } catch {
+      return {
+        status: 'error',
+        summary: `Hermes RunQ hook manifest is invalid JSON: ${manifestPath}`,
+        remediation: 'node src/cli.js init hermes --db .runq/runq.db'
+      };
+    }
+  }
   const hookPath = resolve(runqRoot, 'adapters/hermes/hook.js');
   return existsSync(hookPath)
     ? {
@@ -100,23 +150,27 @@ export function checkSetupHealth({
     },
     {
       id: 'claude-code',
+      agent_id: 'claude_code',
       label: 'Claude Code',
       ...checkClaude(homeDir)
     },
     {
       id: 'codex',
+      agent_id: 'codex',
       label: 'Codex',
       ...checkCodex(homeDir)
     },
     {
       id: 'openclaw',
+      agent_id: 'openclaw',
       label: 'OpenClaw',
       ...checkOpenClaw(homeDir)
     },
     {
       id: 'hermes',
+      agent_id: 'hermes',
       label: 'Hermes',
-      ...checkHermes(runqRoot)
+      ...checkHermes(runqRoot, homeDir)
     }
   ];
 

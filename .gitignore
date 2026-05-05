@@ -1,8 +1,11 @@
 .runq/
 node_modules/
 .next/
+.tmp/
 .DS_Store
 coverage/
+playwright-report/
+test-results/
 .env
 .env.*
 *.db

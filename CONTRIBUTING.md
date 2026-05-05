@@ -24,10 +24,28 @@ Useful contributions:
 
 ## Development
 
+Install dependencies:
+
+```bash
+npm install
+```
+
 Run tests:
 
 ```bash
 npm test
+```
+
+Build the Next.js UI:
+
+```bash
+npm run build
+```
+
+Run browser end-to-end tests:
+
+```bash
+npm run test:e2e
 ```
 
 Ingest the sample session:
@@ -52,3 +70,30 @@ Protocol changes should update:
 - tests
 
 Breaking changes should be proposed as an RFC before implementation.
+
+## Pull Requests
+
+Before opening a pull request:
+
+- Run the relevant tests for your change.
+- Add or update tests for behavior changes.
+- Update docs when CLI commands, protocol fields, setup flows, or UI flows change.
+- Keep telemetry metadata-first by default.
+- Do not commit local databases, `.env` files, `.runq/`, `.next/`, Playwright reports, or test output.
+
+For release-impacting changes, run:
+
+```bash
+npm test
+npm run build
+npm run test:e2e
+npm run release-check
+npm audit --omit=dev
+env npm_config_cache=.tmp/npm-cache npm pack --dry-run
+```
+
+## Security And Privacy
+
+Do not open public issues for vulnerabilities. Follow `SECURITY.md`.
+
+Do not paste raw prompts, command output, proprietary source code, API keys, passwords, or token-looking strings into issues or pull requests. Redact examples and prefer hashes, summaries, counts, and metadata.

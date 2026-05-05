@@ -1,0 +1,66 @@
+name: Bug report
+description: Report a reproducible RunQ bug.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include raw prompts, secrets, private command output, or proprietary code.
+  - type: input
+    id: version
+    attributes:
+      label: RunQ version or commit
+      placeholder: "0.2.0 or commit SHA"
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node.js version
+      placeholder: "node --version"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - CLI
+        - Run Inbox UI
+        - Claude Code adapter
+        - Codex adapter
+        - OpenClaw adapter
+        - Hermes adapter
+        - Protocol/schema
+        - Scoring/recommendations
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      placeholder: "1. Run ...\n2. Open ...\n3. See ..."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted logs or doctor output
+      render: shell
+
