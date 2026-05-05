@@ -55,6 +55,15 @@ npm install
 bash scripts/install-local.sh
 ```
 
+Try the full Run Inbox without connecting an agent first:
+
+```bash
+node src/cli.js demo --db .runq/demo.db
+npm run inbox -- --db .runq/demo.db --port 4545
+```
+
+The demo database includes successful, failed, needs-review, and follow-up sessions so the Agents, Sessions, Traces, Evaluations, Recommendations, Setup, and Docs pages have realistic local data on first launch.
+
 Connect a local agent automatically:
 
 ```bash

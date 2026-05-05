@@ -11,6 +11,7 @@ import { initAgent } from './init.js';
 import { importOpenClawSessionFile } from './openclaw-session-import.js';
 import { checkSetupHealth } from './doctor.js';
 import { createReadinessReport } from './readiness.js';
+import { createDemoDatabase } from './demo.js';
 
 const runqRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -53,6 +54,7 @@ function printUsage() {
   console.log(`RunQ CLI
 
 Usage:
+  runq demo --db <path>
   runq ingest <events.json> --db <path>
   runq init <all|claude-code|codex|openclaw|hermes> --db <path>
   runq doctor --db <path>
@@ -90,6 +92,19 @@ export function main(argv = process.argv.slice(2)) {
     store.close();
     console.log(`ingested ${events.length} events`);
     return 0;
+  }
+
+  if (command === 'demo') {
+    try {
+      const result = createDemoDatabase(dbPath);
+      console.log(`created RunQ demo database at ${result.dbPath}`);
+      console.log(`wrote ${result.event_count} events across ${result.session_ids.length} sessions`);
+      console.log(`open it with: npm run inbox -- --db ${result.dbPath} --port 4545`);
+      return 0;
+    } catch (error) {
+      console.error(error.message);
+      return 1;
+    }
   }
 
   if (command === 'init') {

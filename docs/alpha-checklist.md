@@ -17,13 +17,14 @@ Invite users who:
 
 1. Clone the repo.
 2. Run `bash scripts/install-local.sh`.
-3. Configure local agent surfaces with `node src/cli.js init all --db .runq/runq.db`, or configure one surface with `init claude-code`, `init codex`, `init openclaw`, or `init hermes`.
-4. Run `node src/cli.js doctor --db .runq/runq.db` and fix every missing check that applies to the agent being tested.
-5. Run a normal coding-agent task.
-6. Open the local Run Inbox.
-7. Search or filter the run list and timeline to confirm the captured events are inspectable.
-8. Run `node src/cli.js readiness --db .runq/runq.db` to check public-preview readiness.
-9. Export one low-confidence session bundle.
+3. Run `node src/cli.js demo --db .runq/demo.db` and open `npm run inbox -- --db .runq/demo.db --port 4545` to verify the product UI before connecting an agent.
+4. Configure local agent surfaces with `node src/cli.js init all --db .runq/runq.db`, or configure one surface with `init claude-code`, `init codex`, `init openclaw`, or `init hermes`.
+5. Run `node src/cli.js doctor --db .runq/runq.db` and fix every missing check that applies to the agent being tested.
+6. Run a normal coding-agent task.
+7. Open the local Run Inbox.
+8. Search or filter the run list and timeline to confirm the captured events are inspectable.
+9. Run `node src/cli.js readiness --db .runq/runq.db` to check public-preview readiness.
+10. Export one low-confidence session bundle.
 
 ## OpenClaw Harness Check
 
