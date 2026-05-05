@@ -26,6 +26,13 @@ env npm_config_cache=.tmp/npm-cache npm pack --dry-run
 
 The Playwright check starts a local Next.js server and verifies the primary user flow plus mobile overflow behavior.
 
+For first-run manual review, generate demo data with:
+
+```bash
+node src/cli.js demo --db .runq/demo.db
+npm run inbox -- --db .runq/demo.db --port 4545
+```
+
 ## Manual Product Check
 
 Before publishing an alpha release, manually open the app and check:
@@ -54,4 +61,3 @@ Confirm that recommendation accept/dismiss with notes writes a feedback event an
 Only publish to npm after `npm pack --dry-run` shows expected package contents.
 
 Do not publish local databases, `.env` files, `.runq/`, `.next/`, Playwright reports, or test output.
-

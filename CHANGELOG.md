@@ -8,6 +8,7 @@ The project follows semantic versioning once it reaches `1.0`. Before `1.0`, min
 
 ### Added
 
+- `runq demo --db <path>` to generate a realistic local demo database for first-time Run Inbox evaluation without connecting an agent.
 - Next.js Run Inbox product shell with agent-first navigation.
 - Agent routes for sessions, evaluations, recommendations, and setup.
 - Agent trace explorer with deep links from evaluation review queues.
@@ -37,4 +38,3 @@ The project follows semantic versioning once it reaches `1.0`. Before `1.0`, min
 - RunQ is local-only and does not provide authentication, cloud sync, or team workspaces.
 - Node's built-in SQLite APIs still emit experimental warnings.
 - The project needs more real local sessions before a broader developer preview.
-

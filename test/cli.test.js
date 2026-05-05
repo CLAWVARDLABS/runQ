@@ -80,6 +80,52 @@ test('CLI prints an error for unknown commands', () => {
   assert.match(result.stderr, /Unknown command: unknown/);
 });
 
+test('CLI demo writes a complete local demo database', () => {
+  const dir = tempDir();
+  const dbPath = join(dir, 'demo.db');
+
+  const result = spawnSync(process.execPath, [
+    cliPath,
+    'demo',
+    '--db',
+    dbPath
+  ], {
+    encoding: 'utf8'
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /created RunQ demo database/);
+  assert.match(result.stdout, new RegExp(dbPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(result.stdout, /npm run inbox -- --db/);
+
+  const sessions = spawnSync(process.execPath, [
+    cliPath,
+    'sessions',
+    '--db',
+    dbPath
+  ], {
+    encoding: 'utf8'
+  });
+  assert.equal(sessions.status, 0, sessions.stderr);
+  const rows = JSON.parse(sessions.stdout);
+  assert.equal(rows.length, 4);
+  assert.deepEqual(new Set(rows.map((row) => row.framework)), new Set(['openclaw', 'codex', 'claude_code']));
+
+  const exported = spawnSync(process.execPath, [
+    cliPath,
+    'export',
+    'demo-openclaw-needs-review',
+    '--db',
+    dbPath
+  ], {
+    encoding: 'utf8'
+  });
+  assert.equal(exported.status, 0, exported.stderr);
+  const bundle = JSON.parse(exported.stdout);
+  assert.equal(bundle.recommendations.some((rec) => rec.recommendation_id === 'rec_verification_strategy'), true);
+  assert.equal(bundle.recommendations.some((rec) => rec.state.status === 'accepted'), true);
+});
+
 test('CLI accept-recommendation records a recommendation.accepted event for the session', () => {
   const dir = tempDir();
   const dbPath = join(dir, 'runq.db');
