@@ -113,11 +113,14 @@ test('Trace explorer workflow is readable and opens node details from graph clic
   await expect(page.locator('[data-task-workflow="react-flow"]')).toBeVisible();
   await expect(page.locator('[data-workflow-viewport="content-first"]')).toBeVisible();
   await expect(page.locator('[data-selected-event-id="evt_e2e_prompt"]')).toBeVisible();
+  // The width/height assertions below target the hydrated ReactFlow nodes (~320px wide),
+  // not the SSR-static fallback (~220-260px). Wait for hydration deterministically.
+  await expect(page.locator('[data-workflow-mount-state="hydrated"]')).toBeVisible();
 
   const workflowBox = await page.locator('[data-workflow-canvas-height="compact"]').boundingBox();
   expect(workflowBox?.height).toBeLessThanOrEqual(330);
 
-  const promptBox = await page.locator('[data-flow-action-id="evt_e2e_prompt"]').boundingBox();
+  const promptBox = await page.locator('[data-flow-action-id="evt_e2e_prompt"]').first().boundingBox();
   expect(promptBox?.width).toBeGreaterThanOrEqual(300);
 
   await page.locator('[data-flow-action-id="evt_e2e_model"]').click();

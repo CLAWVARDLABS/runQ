@@ -919,7 +919,8 @@ function TaskWorkflowCanvas({ actions, selectedEventId, onSelectEvent }) {
     'data-workflow-canvas-height': 'compact',
     'data-workflow-interaction': 'pan-drag-click',
     'data-workflow-node-size': 'readable',
-    'data-workflow-viewport': 'content-first'
+    'data-workflow-viewport': 'content-first',
+    'data-workflow-mount-state': mounted ? 'hydrated' : 'static'
   }, [
     mounted
       ? h('div', { className: 'h-[310px]', 'data-flow-layout': 'timeline-graph', 'data-task-workflow': 'react-flow' },
