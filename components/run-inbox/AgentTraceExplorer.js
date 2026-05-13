@@ -844,14 +844,13 @@ const taskNodeTypes = { taskAction: TaskWorkflowNode };
 
 function StaticTaskWorkflow({ actions, selectedEventId, onSelectEvent }) {
   const edges = actions.slice(1).map((action, index) => ({ from: actions[index], to: action }));
+  // Note: data-workflow-* viewport/canvas/interaction/node-size attributes live on the
+  // wrapping TaskWorkflowCanvas outer div. Duplicating them here breaks Playwright
+  // strict-mode locators pre-hydration when this static fallback is nested inside it.
   return h('div', {
     className: 'relative min-w-max rounded-2xl border border-outline-variant/35 bg-surface-container-lowest/70 p-4',
     'data-flow-layout': 'timeline-graph',
-    'data-task-workflow': 'react-flow',
-    'data-workflow-canvas-height': 'compact',
-    'data-workflow-interaction': 'pan-drag-click',
-    'data-workflow-node-size': 'readable',
-    'data-workflow-viewport': 'content-first'
+    'data-task-workflow': 'react-flow'
   }, [
     h('svg', { 'aria-hidden': 'true', className: 'pointer-events-none absolute inset-0 h-full w-full overflow-visible' }, [
       h('defs', null,
