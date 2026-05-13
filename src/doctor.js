@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 import { RunqStore } from './store.js';
 
 function statusWeight(status) {
-  return { ok: 0, manual: 0, missing: 1, error: 1 }[status] ?? 1;
+  return { ok: 0, manual: 0, absent: 0, missing: 1, error: 1 }[status] ?? 1;
 }
 
 function checkDbWritable(dbPath) {
@@ -23,8 +23,12 @@ function checkDbWritable(dbPath) {
 }
 
 function checkClaude(homeDir) {
-  const path = join(homeDir, '.claude', 'settings.local.json');
+  const claudeDir = join(homeDir, '.claude');
+  const path = join(claudeDir, 'settings.local.json');
   const remediation = 'node src/cli.js init claude-code --db .runq/runq.db';
+  if (!existsSync(claudeDir)) {
+    return { status: 'absent', summary: 'Claude Code is not installed on this machine', remediation: null };
+  }
   if (!existsSync(path)) {
     return { status: 'missing', summary: 'Claude Code settings file was not found', remediation };
   }
@@ -40,8 +44,12 @@ function checkClaude(homeDir) {
 }
 
 function checkCodex(homeDir) {
-  const path = join(homeDir, '.codex', 'config.toml');
+  const codexDir = join(homeDir, '.codex');
+  const path = join(codexDir, 'config.toml');
   const remediation = 'node src/cli.js init codex --db .runq/runq.db';
+  if (!existsSync(codexDir)) {
+    return { status: 'absent', summary: 'Codex is not installed on this machine', remediation: null };
+  }
   if (!existsSync(path)) {
     return { status: 'missing', summary: 'Codex config file was not found', remediation };
   }
@@ -73,8 +81,12 @@ function checkCodex(homeDir) {
 }
 
 function checkOpenClaw(homeDir) {
-  const pluginPath = join(homeDir, '.openclaw', 'extensions', 'runq-reporter', 'index.cjs');
-  const configPath = join(homeDir, '.openclaw', 'openclaw.json');
+  const openclawDir = join(homeDir, '.openclaw');
+  if (!existsSync(openclawDir)) {
+    return { status: 'absent', summary: 'OpenClaw is not installed on this machine', remediation: null };
+  }
+  const pluginPath = join(openclawDir, 'extensions', 'runq-reporter', 'index.cjs');
+  const configPath = join(openclawDir, 'openclaw.json');
   if (existsSync(pluginPath) && existsSync(configPath)) {
     try {
       const config = JSON.parse(readFileSync(configPath, 'utf8'));
@@ -120,7 +132,11 @@ function checkOpenClaw(homeDir) {
 }
 
 function checkHermes(runqRoot, homeDir) {
-  const manifestPath = join(homeDir, '.hermes', 'hooks', 'runq.json');
+  const hermesDir = join(homeDir, '.hermes');
+  if (!existsSync(hermesDir)) {
+    return { status: 'absent', summary: 'Hermes is not installed on this machine', remediation: null };
+  }
+  const manifestPath = join(hermesDir, 'hooks', 'runq.json');
   if (existsSync(manifestPath)) {
     try {
       const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));

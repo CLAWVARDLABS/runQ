@@ -118,7 +118,11 @@ export function main(argv = process.argv.slice(2)) {
       const result = initAgent(target, { homeDir, dbPath, runqRoot });
       const results = Array.isArray(result) ? result : [result];
       for (const item of results) {
-        console.log(`configured ${item.target}: ${item.path}`);
+        if (item.skipped) {
+          console.log(`skipped ${item.target}: ${item.summary}`);
+        } else {
+          console.log(`configured ${item.target}: ${item.path}`);
+        }
       }
       return 0;
     } catch (error) {

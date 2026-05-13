@@ -352,6 +352,11 @@ test('CLI init writes OpenClaw plugin package and enables prompt hook access', (
 
 test('CLI init resolves relative database paths before writing agent hooks', () => {
   const dir = tempDir();
+  // Simulate a machine that has all four agents installed.
+  mkdirSync(join(dir, '.claude'), { recursive: true });
+  mkdirSync(join(dir, '.codex'), { recursive: true });
+  mkdirSync(join(dir, '.openclaw'), { recursive: true });
+  mkdirSync(join(dir, '.hermes'), { recursive: true });
   const result = spawnSync(process.execPath, [
     cliPath,
     'init',
@@ -405,6 +410,11 @@ test('CLI init writes Hermes hook command manifest', () => {
 
 test('CLI init all configures every supported local agent surface', () => {
   const dir = tempDir();
+  // Simulate a machine that has all four agents installed.
+  mkdirSync(join(dir, '.claude'), { recursive: true });
+  mkdirSync(join(dir, '.codex'), { recursive: true });
+  mkdirSync(join(dir, '.openclaw'), { recursive: true });
+  mkdirSync(join(dir, '.hermes'), { recursive: true });
   const dbPath = join(dir, 'runq.db');
   const result = spawnSync(process.execPath, [
     cliPath,

@@ -638,7 +638,11 @@ function deriveAgents(sessions, setupHealth) {
   const connectedSetupIds = agentChecks
     .filter(({ check }) => check.status === 'ok')
     .map(({ agentId }) => agentId);
-  const ids = new Set([...sessions.map((s) => s.framework).filter(Boolean), ...connectedSetupIds]);
+  const sessionAgentIds = sessions.map((s) => s.framework).filter(Boolean);
+  // Surface an agent on the page only if it's actually installed locally (hook setup found)
+  // or has produced real sessions in the DB. Agents whose home dir is missing
+  // (status === 'absent') are hidden until they appear.
+  const ids = new Set([...sessionAgentIds, ...connectedSetupIds]);
   const setupByAgentId = new Map(agentChecks.map(({ check, agentId }) => [agentId, check]));
   return Array.from(ids).map((id) => {
     const [, displayName, brand, logo, gradient] = agentMeta(id);

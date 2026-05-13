@@ -75,6 +75,8 @@ test('checkSetupHealth reports configured Claude Code, Codex, OpenClaw, and Herm
 
 test('CLI doctor prints setup health JSON', () => {
   const dir = mkdtempSync(join(tmpdir(), 'runq-doctor-cli-'));
+  // Install Claude Code but not its RunQ hook, to exercise the remediation branch.
+  mkdirSync(join(dir, '.claude'), { recursive: true });
   const result = spawnSync(process.execPath, [
     cliPath,
     'doctor',
@@ -136,6 +138,9 @@ test('checkSetupHealth reports partial Codex hooks config as manual upgrade', ()
 
 test('CLI doctor prints remediation hints for failed checks', () => {
   const dir = mkdtempSync(join(tmpdir(), 'runq-doctor-cli-text-'));
+  // Install Claude Code (so it's not 'absent') but leave the RunQ hook missing
+  // so the doctor surfaces a remediation hint.
+  mkdirSync(join(dir, '.claude'), { recursive: true });
   const result = spawnSync(process.execPath, [
     cliPath,
     'doctor',
@@ -148,4 +153,20 @@ test('CLI doctor prints remediation hints for failed checks', () => {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /RunQ setup health: needs attention/);
   assert.match(result.stdout, /Fix: node src\/cli\.js init claude-code/);
+});
+
+test('checkSetupHealth marks uninstalled agents as absent without failing the overall rollup', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'runq-doctor-absent-'));
+  const health = checkSetupHealth({
+    homeDir: dir,
+    runqRoot,
+    dbPath: join(dir, 'runq.db')
+  });
+
+  assert.equal(health.ok, true, 'absent agents should not flip overall ok=false');
+  for (const id of ['claude-code', 'codex', 'openclaw', 'hermes']) {
+    const check = health.checks.find((entry) => entry.id === id);
+    assert.equal(check?.status, 'absent', `${id} should be absent on an empty home`);
+    assert.equal(check?.remediation, null, `${id} absent check should not surface a remediation`);
+  }
 });

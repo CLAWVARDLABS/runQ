@@ -1,6 +1,31 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
+const agentHomeDirs = {
+  'claude-code': '.claude',
+  codex: '.codex',
+  openclaw: '.openclaw',
+  hermes: '.hermes'
+};
+
+export function detectAgentPresence(homeDir = process.env.HOME) {
+  const result = {};
+  for (const [target, dirName] of Object.entries(agentHomeDirs)) {
+    result[target] = homeDir ? existsSync(join(homeDir, dirName)) : false;
+  }
+  return result;
+}
+
+function skipped(target, homeDir) {
+  return {
+    target,
+    path: null,
+    skipped: true,
+    reason: 'agent-not-installed',
+    summary: `${target} is not installed on this machine (looked for ${join(homeDir ?? '', agentHomeDirs[target])})`
+  };
+}
+
 const claudeHookEvents = [
   'SessionStart',
   'UserPromptSubmit',
@@ -49,7 +74,10 @@ function hookEntry(adapterPath, dbPath) {
   };
 }
 
-export function initClaudeCode({ homeDir, dbPath, runqRoot }) {
+export function initClaudeCode({ homeDir, dbPath, runqRoot, force = false }) {
+  if (!force && !existsSync(join(homeDir, '.claude'))) {
+    return skipped('claude-code', homeDir);
+  }
   const settingsPath = join(homeDir, '.claude', 'settings.local.json');
   const adapterPath = resolve(runqRoot, 'adapters/claude-code/hook.js');
   const settings = readJsonIfExists(settingsPath, {});
@@ -157,7 +185,10 @@ function setTomlFeatureFlag(toml, name, value) {
   return lines.join('\n');
 }
 
-export function initCodex({ homeDir, dbPath, runqRoot }) {
+export function initCodex({ homeDir, dbPath, runqRoot, force = false }) {
+  if (!force && !existsSync(join(homeDir, '.codex'))) {
+    return skipped('codex', homeDir);
+  }
   const configPath = join(homeDir, '.codex', 'config.toml');
   const adapterPath = resolve(runqRoot, 'adapters/codex/hook.js');
   const existing = existsSync(configPath) ? readFileSync(configPath, 'utf8') : '';
@@ -216,7 +247,10 @@ ${registrations}
 `;
 }
 
-export function initOpenClaw({ homeDir, dbPath, runqRoot }) {
+export function initOpenClaw({ homeDir, dbPath, runqRoot, force = false }) {
+  if (!force && !existsSync(join(homeDir, '.openclaw'))) {
+    return skipped('openclaw', homeDir);
+  }
   const openclawDir = join(homeDir, '.openclaw');
   const pluginRoot = join(openclawDir, 'extensions', 'runq-reporter');
   const configPath = join(openclawDir, 'openclaw.json');
@@ -267,7 +301,10 @@ export function initOpenClaw({ homeDir, dbPath, runqRoot }) {
   return { target: 'openclaw', path: pluginRoot };
 }
 
-export function initHermes({ homeDir, dbPath, runqRoot }) {
+export function initHermes({ homeDir, dbPath, runqRoot, force = false }) {
+  if (!force && !existsSync(join(homeDir, '.hermes'))) {
+    return skipped('hermes', homeDir);
+  }
   const manifestPath = join(homeDir, '.hermes', 'hooks', 'runq.json');
   const adapterPath = resolve(runqRoot, 'adapters/hermes/hook.js');
   writeJson(manifestPath, {
@@ -295,6 +332,7 @@ export function initAgent(target, options) {
   };
 
   if (target === 'all') {
+    // Auto-skip agents that are not installed on this machine.
     return [
       initClaudeCode(resolvedOptions),
       initCodex(resolvedOptions),
@@ -302,17 +340,21 @@ export function initAgent(target, options) {
       initHermes(resolvedOptions)
     ];
   }
+  // Explicit single-target init: assume the user knows the agent is (or will be) installed,
+  // so we force-write even if the home directory isn't there yet — unless the caller
+  // explicitly passed force: false.
+  const forced = { ...resolvedOptions, force: resolvedOptions.force ?? true };
   if (target === 'claude-code') {
-    return initClaudeCode(resolvedOptions);
+    return initClaudeCode(forced);
   }
   if (target === 'codex') {
-    return initCodex(resolvedOptions);
+    return initCodex(forced);
   }
   if (target === 'openclaw') {
-    return initOpenClaw(resolvedOptions);
+    return initOpenClaw(forced);
   }
   if (target === 'hermes') {
-    return initHermes(resolvedOptions);
+    return initHermes(forced);
   }
   throw new Error(`Unsupported init target: ${target}`);
 }
