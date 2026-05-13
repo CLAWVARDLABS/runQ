@@ -46,9 +46,30 @@ function checkCodex(homeDir) {
     return { status: 'missing', summary: 'Codex config file was not found', remediation };
   }
   const config = readFileSync(path, 'utf8');
-  return config.includes('adapters/codex/hook.js')
-    ? { status: 'ok', summary: `Notify hook configured: ${path}`, remediation: 'No action needed.' }
-    : { status: 'missing', summary: `Codex config exists but RunQ notify hook is missing: ${path}`, remediation };
+  const hasRunqAdapter = config.includes('adapters/codex/hook.js');
+  const hasCodexHooksFeature = /codex_hooks\s*=\s*true/.test(config);
+  const codexHookNames = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop'];
+  const hasAllCodexHookTables = codexHookNames.every((hookName) =>
+    config.includes(`[[hooks.${hookName}]]`) && config.includes(`[[hooks.${hookName}.hooks]]`)
+  );
+  if (hasRunqAdapter && hasCodexHooksFeature && hasAllCodexHookTables) {
+    return { status: 'ok', summary: `Codex hooks configured: ${path}`, remediation: 'No action needed.' };
+  }
+  if (hasRunqAdapter && hasCodexHooksFeature) {
+    return {
+      status: 'manual',
+      summary: `Codex RunQ hooks are incomplete; rerun init for full timeline capture: ${path}`,
+      remediation
+    };
+  }
+  if (hasRunqAdapter) {
+    return {
+      status: 'manual',
+      summary: `Legacy Codex notify hook configured; enable codex_hooks for full timeline capture: ${path}`,
+      remediation
+    };
+  }
+  return { status: 'missing', summary: `Codex config exists but RunQ hooks are missing: ${path}`, remediation };
 }
 
 function checkOpenClaw(homeDir) {

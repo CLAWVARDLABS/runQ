@@ -3,6 +3,8 @@ import {
   eventId as makeEventId,
   hash,
   isVerificationCommand,
+  metadataHash,
+  objectKeyCount,
   textSummary
 } from '../../src/normalize-utils.js';
 
@@ -63,6 +65,14 @@ function userPromptSubmitted(input, now) {
   });
 }
 
+function toolMcpServer(input) {
+  return input.mcp_server ?? input.mcpServer ?? input.server_name ?? input.serverName ?? input.tool_input?.mcp_server ?? input.tool_input?.mcpServer;
+}
+
+function toolSkillName(input) {
+  return input.skill_name ?? input.skillName ?? input.tool_input?.skill_name ?? input.tool_input?.skillName;
+}
+
 function bashCommandStarted(input, now) {
   const command = input.tool_input?.command ?? '';
   return baseEvent(input, 'command.started', now, 'metadata', {
@@ -96,19 +106,32 @@ function bashCommandEnded(input, now) {
 }
 
 function toolStarted(input, now) {
+  const actionInput = input.tool_input;
   return baseEvent(input, 'tool.call.started', now, 'metadata', {
     tool_name: input.tool_name ?? 'unknown',
     tool_type: 'claude_code_tool',
-    tool_call_id: input.tool_use_id ?? hash(JSON.stringify(input.tool_input ?? {}))
+    tool_call_id: input.tool_use_id ?? hash(JSON.stringify(input.tool_input ?? {})),
+    mcp_server: toolMcpServer(input),
+    skill_name: toolSkillName(input),
+    input_hash: metadataHash(actionInput),
+    input_key_count: objectKeyCount(actionInput)
   });
 }
 
 function toolEnded(input, now) {
+  const actionInput = input.tool_input;
+  const actionOutput = input.tool_response;
   return baseEvent(input, 'tool.call.ended', now, 'metadata', {
     tool_name: input.tool_name ?? 'unknown',
     tool_type: 'claude_code_tool',
     tool_call_id: input.tool_use_id ?? hash(JSON.stringify(input.tool_input ?? {})),
-    status: input.tool_response?.success === false ? 'error' : 'ok'
+    status: input.tool_response?.success === false ? 'error' : 'ok',
+    mcp_server: toolMcpServer(input),
+    skill_name: toolSkillName(input),
+    input_hash: metadataHash(actionInput),
+    input_key_count: objectKeyCount(actionInput),
+    output_hash: metadataHash(actionOutput),
+    output_key_count: objectKeyCount(actionOutput)
   });
 }
 

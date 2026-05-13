@@ -18,6 +18,55 @@
     ],
     "quality": {
       "outcome_confidence": 0.9,
+      "trust_score": 90,
+      "trust_breakdown": {
+        "evidence_strength": {
+          "label": "Evidence Strength",
+          "score": 90,
+          "reasons": [
+            "lifecycle_events_present",
+            "model_events_present",
+            "file_change_evidence",
+            "verification_evidence",
+            "satisfaction_signal_present"
+          ]
+        },
+        "verification_strength": {
+          "label": "Verification Strength",
+          "score": 100,
+          "reasons": [
+            "verification_passed"
+          ]
+        },
+        "execution_quality": {
+          "label": "Execution Quality",
+          "score": 93,
+          "reasons": [
+            "commands_observed"
+          ]
+        },
+        "autonomy_reliability": {
+          "label": "Autonomy Reliability",
+          "score": 96,
+          "reasons": [
+            "satisfaction_accepted"
+          ]
+        },
+        "cost_discipline": {
+          "label": "Cost Discipline",
+          "score": 50,
+          "reasons": [
+            "cost_metadata_observed"
+          ]
+        },
+        "risk_exposure": {
+          "label": "Risk Exposure",
+          "score": 10,
+          "reasons": [
+            "low_observed_risk"
+          ]
+        }
+      },
       "verification_coverage": 1,
       "rework_risk": 0.1,
       "permission_friction": 0,

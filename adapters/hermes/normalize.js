@@ -3,6 +3,8 @@ import {
   eventId,
   hash,
   isVerificationCommand,
+  metadataHash,
+  objectKeyCount,
   textSummary
 } from '../../src/normalize-utils.js';
 
@@ -51,6 +53,30 @@ function baseEvent(input, eventType, now, privacyLevel, payload) {
 
 function commandFromInput(input) {
   return input.command ?? input.cmd ?? input.tool_input?.command ?? '';
+}
+
+function toolName(input) {
+  return input.tool_name ?? input.toolName ?? input.name ?? input.tool?.name ?? 'unknown';
+}
+
+function toolCallId(input) {
+  return input.tool_call_id ?? input.toolCallId ?? input.tool_use_id ?? input.toolUseId ?? hash(JSON.stringify(input.tool_input ?? input.input ?? {}));
+}
+
+function toolInput(input) {
+  return input.tool_input ?? input.input ?? input.params;
+}
+
+function toolOutput(input) {
+  return input.tool_response ?? input.output ?? input.result ?? input.response;
+}
+
+function toolMcpServer(input) {
+  return input.mcp_server ?? input.mcpServer ?? input.server_name ?? input.serverName ?? input.tool?.mcp_server ?? input.tool?.mcpServer;
+}
+
+function toolSkillName(input) {
+  return input.skill_name ?? input.skillName ?? input.skill?.name;
 }
 
 export function normalizeHermesEvent(input, options = {}) {
@@ -134,6 +160,37 @@ export function normalizeHermesEvent(input, options = {}) {
       duration_ms: input.duration_ms ?? input.durationMs,
       is_verification: isVerificationCommand(command),
       verification_kind: isVerificationCommand(command) ? 'command' : undefined
+    })];
+  }
+
+  if (type === 'tool.started' || type === 'tool.call.started') {
+    const actionInput = toolInput(input);
+    return [baseEvent(input, 'tool.call.started', now, 'metadata', {
+      tool_name: toolName(input),
+      tool_type: input.tool_type ?? input.toolType ?? 'hermes_tool',
+      tool_call_id: toolCallId(input),
+      mcp_server: toolMcpServer(input),
+      skill_name: toolSkillName(input),
+      input_hash: metadataHash(actionInput),
+      input_key_count: objectKeyCount(actionInput)
+    })];
+  }
+
+  if (type === 'tool.finished' || type === 'tool.ended' || type === 'tool.call.ended') {
+    const actionInput = toolInput(input);
+    const actionOutput = toolOutput(input);
+    return [baseEvent(input, 'tool.call.ended', now, 'metadata', {
+      tool_name: toolName(input),
+      tool_type: input.tool_type ?? input.toolType ?? 'hermes_tool',
+      tool_call_id: toolCallId(input),
+      mcp_server: toolMcpServer(input),
+      skill_name: toolSkillName(input),
+      status: input.success === false || input.error ? 'error' : input.status ?? 'ok',
+      duration_ms: input.duration_ms ?? input.durationMs,
+      input_hash: metadataHash(actionInput),
+      input_key_count: objectKeyCount(actionInput),
+      output_hash: metadataHash(actionOutput),
+      output_key_count: objectKeyCount(actionOutput)
     })];
   }
 

@@ -61,6 +61,53 @@ test('normalizeHermesEvent maps command events', () => {
   assert.equal(event.payload.is_verification, true);
 });
 
+test('normalizeHermesEvent maps generic tool actions', () => {
+  const [started] = normalizeHermesEvent({
+    type: 'tool.started',
+    session_id: 'hermes-session-1',
+    run_id: 'hermes-run-1',
+    tool_name: 'web_search',
+    tool_type: 'browser_or_search',
+    tool_call_id: 'tool-1',
+    mcp_server: 'notion',
+    skill_name: 'clawvard-asvp',
+    tool_input: { query: 'RunQ agent quality' }
+  }, {
+    now: '2026-05-03T07:00:04.000Z'
+  });
+  const [ended] = normalizeHermesEvent({
+    type: 'tool.finished',
+    session_id: 'hermes-session-1',
+    run_id: 'hermes-run-1',
+    tool_name: 'web_search',
+    tool_type: 'browser_or_search',
+    tool_call_id: 'tool-1',
+    mcp_server: 'notion',
+    skill_name: 'clawvard-asvp',
+    tool_input: { query: 'RunQ agent quality' },
+    result: { count: 3 },
+    success: true,
+    duration_ms: 1200
+  }, {
+    now: '2026-05-03T07:00:05.000Z'
+  });
+
+  assert.equal(started.event_type, 'tool.call.started');
+  assert.equal(started.payload.tool_name, 'web_search');
+  assert.equal(started.payload.mcp_server, 'notion');
+  assert.equal(started.payload.skill_name, 'clawvard-asvp');
+  assert.equal(started.payload.input_key_count, 1);
+  assert.equal(started.payload.input_hash.startsWith('sha256:'), true);
+  assert.equal(ended.event_type, 'tool.call.ended');
+  assert.equal(ended.payload.tool_type, 'browser_or_search');
+  assert.equal(ended.payload.mcp_server, 'notion');
+  assert.equal(ended.payload.skill_name, 'clawvard-asvp');
+  assert.equal(ended.payload.status, 'ok');
+  assert.equal(ended.payload.duration_ms, 1200);
+  assert.equal(ended.payload.output_key_count, 1);
+  assert.equal(ended.payload.output_hash.startsWith('sha256:'), true);
+});
+
 test('Hermes hook command reads stdin and appends normalized events', () => {
   const dir = mkdtempSync(join(tmpdir(), 'runq-hermes-hook-'));
   const dbPath = join(dir, 'runq.db');

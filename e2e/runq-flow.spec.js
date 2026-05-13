@@ -28,11 +28,24 @@ function seedDb() {
   }
   const store = new RunqStore(dbPath);
   store.appendEvent(event('evt_e2e_started', 'session.started', '2026-05-05T10:00:00.000Z'));
+  store.appendEvent(event('evt_e2e_prompt', 'user.prompt.submitted', '2026-05-05T10:00:30.000Z', {
+    prompt_summary: 'Fix the failing verification and explain the result.',
+    prompt_length: 51
+  }));
   store.appendEvent(event('evt_e2e_model', 'model.call.ended', '2026-05-05T10:01:00.000Z', {
+    model: 'MiniMax-M2.7',
     input_tokens: 140,
     output_tokens: 38,
     total_tokens: 178,
     duration_ms: 1200
+  }));
+  store.appendEvent(event('evt_e2e_tool', 'tool.call.ended', '2026-05-05T10:01:30.000Z', {
+    tool_name: 'web_search',
+    tool_type: 'web_search',
+    status: 'ok',
+    duration_ms: 900,
+    input_key_count: 1,
+    output_key_count: 2
   }));
   store.appendEvent(event('evt_e2e_file', 'file.changed', '2026-05-05T10:02:00.000Z', {
     file_extension: 'js',
@@ -59,7 +72,7 @@ test.beforeEach(() => {
 test('RunQ product shell supports the primary agent user flow', async ({ page }) => {
   await page.goto('/agents');
   await expect(page.getByRole('heading', { name: 'Agent 总览' })).toBeVisible();
-  await expect(page.getByText('OpenClaw')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'OpenClaw' })).toBeVisible();
 
   await page.locator('a[href="/agents/openclaw/sessions"]').click();
   await expect(page).toHaveURL(/\/agents\/openclaw\/sessions$/);
@@ -84,12 +97,32 @@ test('RunQ product shell supports the primary agent user flow', async ({ page })
 
   await page.goto('/agents');
   await page.locator('a[href="/agents/openclaw/setup"]').click();
+  await expect(page.getByRole('heading', { name: '接入 Agent' }).first()).toBeVisible();
+  await page.getByRole('link', { name: /检查连接/ }).click();
   await expect(page).toHaveURL(/\/agents\/openclaw\/setup$/);
   await expect(page.getByRole('heading', { name: /OpenClaw .* 接入健康度/ })).toBeVisible();
 
   await page.locator('a[href="/docs"]').first().click();
   await expect(page).toHaveURL(/\/docs$/);
   await expect(page.getByRole('heading', { name: '产品文档' })).toBeVisible();
+});
+
+test('Trace explorer workflow is readable and opens node details from graph clicks', async ({ page }) => {
+  await page.goto('/traces?session=ses_e2e_openclaw');
+  await expect(page.locator('[data-selected-session-id="ses_e2e_openclaw"]')).toBeVisible();
+  await expect(page.locator('[data-task-workflow="react-flow"]')).toBeVisible();
+  await expect(page.locator('[data-workflow-viewport="content-first"]')).toBeVisible();
+  await expect(page.locator('[data-selected-event-id="evt_e2e_prompt"]')).toBeVisible();
+
+  const workflowBox = await page.locator('[data-workflow-canvas-height="compact"]').boundingBox();
+  expect(workflowBox?.height).toBeLessThanOrEqual(330);
+
+  const promptBox = await page.locator('[data-flow-action-id="evt_e2e_prompt"]').boundingBox();
+  expect(promptBox?.width).toBeGreaterThanOrEqual(300);
+
+  await page.locator('[data-flow-action-id="evt_e2e_model"]').click();
+  await expect(page.locator('[data-selected-event-id="evt_e2e_model"]')).toBeVisible();
+  await expect(page.getByText('model.call.ended').first()).toBeVisible();
 });
 
 test('RunQ shell fits a mobile viewport without horizontal overflow', async ({ page }) => {

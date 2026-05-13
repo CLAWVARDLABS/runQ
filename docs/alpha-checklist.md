@@ -37,7 +37,7 @@ npm run harness:openclaw -- --scenario repeated-test-failure --db .runq/openclaw
 
 Use the output as an early product sanity check:
 
-- The verified-success run should score high on Outcome Confidence.
+- The verified-success run should score high on RunQ Trust Score.
 - The repeated-test-failure run should show high Loop Risk.
 - The repeated-test-failure run should emit verification strategy and loop prevention recommendations.
 - Both runs should record a `satisfaction.recorded` event and match their golden product snapshots in tests.
@@ -56,7 +56,7 @@ Use the output to check:
 - The first verification command fails.
 - A code file is changed.
 - The second verification command passes.
-- Outcome Confidence is high because the latest verification recovered the earlier failure.
+- RunQ Trust Score is high because the latest verification recovered the earlier failure.
 - Redaction stores command output hashes, not raw command output.
 
 ## v0.2 Release Check
@@ -79,9 +79,9 @@ Use the output to check:
 - Browser E2E covers the primary Agent -> Sessions -> Evaluations -> Traces -> Recommendations -> Setup -> Docs flow.
 - Browser E2E confirms mobile width does not horizontally overflow.
 - `ok` is `true`.
-- OpenClaw verified-success is accepted and high confidence.
+- OpenClaw verified-success is accepted and high trust.
 - OpenClaw repeated-failure emits verification strategy and loop-prevention recommendations.
-- Coding-task recovery has command statuses `[1, 0]`, high confidence, and no stale failed-verification recommendation.
+- Coding-task recovery has command statuses `[1, 0]`, high trust, and no stale failed-verification recommendation.
 - Usable timeline coverage is at least 80 percent.
 - Secret-like payload findings are zero.
 - `npm pack --dry-run` contains only intended open source package files.

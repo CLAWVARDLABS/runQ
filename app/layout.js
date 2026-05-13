@@ -1,8 +1,66 @@
+import '@xyflow/react/dist/style.css';
 import './globals.css';
 
+const description = 'RunQ captures agent runs, scores run quality, and turns local telemetry into evidence-backed workflow recommendations.';
+
 export const metadata = {
-  title: 'RunQ 控制台',
-  description: '面向本地 coding agent 的观测控制台'
+  applicationName: 'RunQ',
+  title: {
+    default: 'RunQ',
+    template: '%s · RunQ'
+  },
+  description,
+  keywords: [
+    'RunQ',
+    'agent observability',
+    'AI agents',
+    'run quality',
+    'local telemetry',
+    'OpenTelemetry',
+    'Codex',
+    'Claude Code',
+    'OpenClaw'
+  ],
+  authors: [{ name: 'RunQ contributors' }],
+  creator: 'RunQ contributors',
+  publisher: 'RunQ',
+  category: 'developer tools',
+  metadataBase: new URL('https://github.com/THEZIONLABS/runQ'),
+  icons: {
+    icon: [
+      { url: '/icon.svg', type: 'image/svg+xml' }
+    ],
+    shortcut: '/icon.svg',
+    apple: [
+      { url: '/apple-icon.svg', type: 'image/svg+xml' }
+    ]
+  },
+  manifest: '/manifest.webmanifest',
+  openGraph: {
+    title: 'RunQ',
+    description,
+    siteName: 'RunQ',
+    type: 'website',
+    images: [
+      {
+        url: '/runq-og.svg',
+        width: 1200,
+        height: 630,
+        alt: 'RunQ agent run quality observability'
+      }
+    ]
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'RunQ',
+    description,
+    images: ['/runq-og.svg']
+  }
+};
+
+export const viewport = {
+  themeColor: '#0050cb',
+  colorScheme: 'light'
 };
 
 export default function RootLayout({ children }) {

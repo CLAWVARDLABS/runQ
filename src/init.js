@@ -25,6 +25,10 @@ function commandFor(adapterPath, dbPath) {
   return `node ${adapterPath} --db ${dbPath}`;
 }
 
+function shellQuote(value) {
+  return `'${String(value).replaceAll("'", "'\\''")}'`;
+}
+
 function pushUnique(list, value) {
   const next = Array.isArray(list) ? [...list] : [];
   if (!next.includes(value)) {
@@ -74,12 +78,95 @@ function codexNotifyBlock(adapterPath, dbPath) {
   ].join('\n');
 }
 
+function codexHookCommand(adapterPath, dbPath) {
+  return `node ${shellQuote(adapterPath)} --db ${shellQuote(dbPath)} --quiet`;
+}
+
+function codexHookEntry(hookName, command, matcher = null) {
+  return [
+    `[[hooks.${hookName}]]`,
+    matcher ? `matcher = ${tomlString(matcher)}` : null,
+    `[[hooks.${hookName}.hooks]]`,
+    'type = "command"',
+    `command = ${tomlString(command)}`
+  ].filter(Boolean).join('\n');
+}
+
+function codexHooksBlock(adapterPath, dbPath) {
+  const command = codexHookCommand(adapterPath, dbPath);
+  return [
+    '# RunQ Codex hooks',
+    codexHookEntry('SessionStart', command, 'startup|resume|clear'),
+    '',
+    codexHookEntry('UserPromptSubmit', command),
+    '',
+    codexHookEntry('PreToolUse', command, 'Bash|apply_patch'),
+    '',
+    codexHookEntry('PostToolUse', command, 'Bash|apply_patch'),
+    '',
+    codexHookEntry('Stop', command),
+    '# End RunQ Codex hooks'
+  ].join('\n');
+}
+
+function removeRunqCodexBlocks(toml) {
+  return toml
+    .replace(/\n?# RunQ notify hook\nnotify = \[[\s\S]*?\]\n?/m, '\n')
+    .replace(/\n?# RunQ Codex hooks\n[\s\S]*?# End RunQ Codex hooks\n?/m, '\n');
+}
+
+function insertTomlRootBlock(toml, block) {
+  const lines = toml.trimEnd().split('\n');
+  if (lines.length === 1 && lines[0] === '') {
+    return `${block}\n`;
+  }
+  const firstTableIndex = lines.findIndex((line) => /^\s*\[/.test(line));
+  if (firstTableIndex === -1) {
+    return `${lines.join('\n')}\n\n${block}\n`;
+  }
+  lines.splice(firstTableIndex, 0, '', block, '');
+  return `${lines.join('\n')}\n`;
+}
+
+function setTomlFeatureFlag(toml, name, value) {
+  const lines = toml.split('\n');
+  const headerIndex = lines.findIndex((line) => /^\s*\[features\]\s*(?:#.*)?$/.test(line));
+  const nextLine = `${name} = ${value ? 'true' : 'false'}`;
+
+  if (headerIndex === -1) {
+    const trimmed = toml.trimEnd();
+    return `${trimmed}${trimmed ? '\n\n' : ''}[features]\n${nextLine}\n`;
+  }
+
+  let sectionEnd = lines.length;
+  for (let index = headerIndex + 1; index < lines.length; index += 1) {
+    if (/^\s*\[/.test(lines[index])) {
+      sectionEnd = index;
+      break;
+    }
+  }
+
+  for (let index = headerIndex + 1; index < sectionEnd; index += 1) {
+    if (new RegExp(`^\\s*${name}\\s*=`).test(lines[index])) {
+      lines[index] = nextLine;
+      return lines.join('\n');
+    }
+  }
+
+  lines.splice(headerIndex + 1, 0, nextLine);
+  return lines.join('\n');
+}
+
 export function initCodex({ homeDir, dbPath, runqRoot }) {
   const configPath = join(homeDir, '.codex', 'config.toml');
   const adapterPath = resolve(runqRoot, 'adapters/codex/hook.js');
   const existing = existsSync(configPath) ? readFileSync(configPath, 'utf8') : '';
-  const withoutRunqNotify = existing.replace(/\n?# RunQ notify hook\nnotify = \[[\s\S]*?\]\n?/m, '\n');
-  const next = `${withoutRunqNotify.trimEnd()}\n\n# RunQ notify hook\n${codexNotifyBlock(adapterPath, dbPath)}\n`;
+  const withNotify = insertTomlRootBlock(
+    removeRunqCodexBlocks(existing),
+    `# RunQ notify hook\n${codexNotifyBlock(adapterPath, dbPath)}`
+  );
+  const base = setTomlFeatureFlag(withNotify, 'codex_hooks', true);
+  const next = `${base.trimEnd()}\n\n${codexHooksBlock(adapterPath, dbPath)}\n`;
 
   mkdirSync(dirname(configPath), { recursive: true });
   writeFileSync(configPath, next);

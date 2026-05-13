@@ -30,7 +30,7 @@ List captured sessions:
 node src/cli.js sessions --db .runq/dev.db
 ```
 
-## Codex Notify Example
+## Recommended Setup
 
 Recommended:
 
@@ -38,27 +38,61 @@ Recommended:
 node src/cli.js init codex --db .runq/runq.db
 ```
 
-Codex supports a `notify` command that receives a JSON payload. Configure it to call the RunQ hook command and pass the JSON argument.
+RunQ configures Codex hooks for full timeline capture and keeps `notify` as a compatibility fallback for older Codex versions. The generated config enables `codex_hooks`, installs command hooks with `--quiet`, and writes a root-level `notify` command.
 
 Example `~/.codex/config.toml`:
 
 ```toml
+# RunQ notify hook
 notify = [
   "node",
   "/absolute/path/to/runq/adapters/codex/hook.js",
   "--db",
   "/absolute/path/to/.runq/runq.db"
 ]
+
+[features]
+codex_hooks = true
+
+# RunQ Codex hooks
+[[hooks.SessionStart]]
+matcher = "startup|resume|clear"
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = "node '/absolute/path/to/runq/adapters/codex/hook.js' --db '/absolute/path/to/.runq/runq.db' --quiet"
+
+[[hooks.UserPromptSubmit]]
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = "node '/absolute/path/to/runq/adapters/codex/hook.js' --db '/absolute/path/to/.runq/runq.db' --quiet"
+
+[[hooks.PreToolUse]]
+matcher = "Bash|apply_patch"
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "node '/absolute/path/to/runq/adapters/codex/hook.js' --db '/absolute/path/to/.runq/runq.db' --quiet"
+
+[[hooks.PostToolUse]]
+matcher = "Bash|apply_patch"
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = "node '/absolute/path/to/runq/adapters/codex/hook.js' --db '/absolute/path/to/.runq/runq.db' --quiet"
+
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = "node '/absolute/path/to/runq/adapters/codex/hook.js' --db '/absolute/path/to/.runq/runq.db' --quiet"
+# End RunQ Codex hooks
 ```
 
-If your Codex version passes notify JSON as an argument instead of stdin, the adapter accepts that shape too.
+Run `node src/cli.js doctor --db .runq/runq.db` after setup. A notify-only config is reported as a manual upgrade because it can record turn completion but not the command/tool timeline.
 
-## Hook Example
+## Manual Hook Command
 
 For Codex versions with hook support, point hook commands at:
 
 ```bash
-node /absolute/path/to/runq/adapters/codex/hook.js --db /absolute/path/to/.runq/runq.db
+node /absolute/path/to/runq/adapters/codex/hook.js --db /absolute/path/to/.runq/runq.db --quiet
 ```
 
-The adapter expects JSON on stdin for command hooks.
+The adapter expects JSON on stdin for command hooks. If your Codex version passes notify JSON as an argument instead of stdin, the adapter accepts that shape too.

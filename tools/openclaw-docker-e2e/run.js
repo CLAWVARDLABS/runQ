@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { homedir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 
 function requiredEnv(name) {
   const value = process.env[name];
@@ -38,6 +39,42 @@ function providerIdFromName(name) {
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'clawvard-token';
+}
+
+export function defaultExpectedText() {
+  return 'RunQ Docker OpenClaw e2e passed.';
+}
+
+export function defaultPrompt() {
+  return [
+    'Use the exec tool exactly once to run this command:',
+    'node -e "console.log(\'runq-tool-e2e\')"',
+    'After the command returns, reply exactly:',
+    defaultExpectedText()
+  ].join('\n');
+}
+
+export function promptFromEnv(env = process.env) {
+  return env.OPENCLAW_E2E_PROMPT || defaultPrompt();
+}
+
+export function expectedTextFromEnv(env = process.env) {
+  return env.OPENCLAW_E2E_EXPECTED_TEXT || defaultExpectedText();
+}
+
+export function expectedCommandCount(env = process.env) {
+  const rawValue = env.OPENCLAW_E2E_EXPECTED_COMMANDS;
+  if (rawValue === undefined || rawValue === '') {
+    return 1;
+  }
+  if (rawValue === 'any') {
+    return null;
+  }
+  const value = Number(rawValue);
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(`OPENCLAW_E2E_EXPECTED_COMMANDS must be a non-negative integer, got ${rawValue}`);
+  }
+  return value;
 }
 
 function main() {
@@ -166,12 +203,9 @@ function main() {
     }
   });
 
-  const prompt = [
-    'Use the exec tool exactly once to run this command:',
-    'node -e "console.log(\'runq-tool-e2e\')"',
-    'After the command returns, reply exactly:',
-    'RunQ Docker OpenClaw e2e passed.'
-  ].join('\n');
+  const prompt = promptFromEnv();
+  const expectedText = expectedTextFromEnv();
+  const expectedCommands = expectedCommandCount();
   const result = run('openclaw', [
     'agent',
     '--local',
@@ -202,6 +236,13 @@ function main() {
   const parsedSessions = JSON.parse(sessions.stdout);
   const capturedSession = parsedSessions.find((session) => session.session_id === sessionId);
   const visibleText = parsedOpenClaw.payloads?.map((payload) => payload.text).join('\n') ?? '';
+  const rawSessionFile = parsedOpenClaw.meta?.agentMeta?.sessionFile;
+  const copiedRawSessionFile = rawSessionFile && existsSync(rawSessionFile)
+    ? join(dirname(dbPath), `${sessionId}.openclaw.jsonl`)
+    : null;
+  if (copiedRawSessionFile) {
+    copyFileSync(rawSessionFile, copiedRawSessionFile);
+  }
 
   const exported = run(process.execPath, [
     'src/cli.js',
@@ -219,7 +260,7 @@ function main() {
     return counts;
   }, {});
 
-  if (!visibleText.includes('RunQ Docker OpenClaw e2e passed.')) {
+  if (expectedText && !visibleText.includes(expectedText)) {
     throw new Error(`OpenClaw response did not contain the expected E2E text: ${visibleText}`);
   }
 
@@ -233,13 +274,14 @@ function main() {
     }
   }
 
-  if (eventTypeCounts['command.started'] !== 1 || eventTypeCounts['command.ended'] !== 1) {
+  if (expectedCommands !== null && ((eventTypeCounts['command.started'] ?? 0) !== expectedCommands || (eventTypeCounts['command.ended'] ?? 0) !== expectedCommands)) {
     throw new Error(`RunQ should capture one command start and one command end. Counts: ${JSON.stringify(eventTypeCounts)}`);
   }
 
   console.log(JSON.stringify({
     session_id: sessionId,
     db_path: dbPath,
+    raw_session_file: copiedRawSessionFile,
     plugin: JSON.parse(pluginInfo.stdout),
     openclaw: parsedOpenClaw,
     sessions: parsedSessions,
@@ -247,9 +289,11 @@ function main() {
   }, null, 2));
 }
 
-try {
-  main();
-} catch (error) {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  try {
+    main();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
 }

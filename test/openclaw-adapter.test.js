@@ -246,6 +246,42 @@ test('normalizeOpenClawEvent maps latest OpenClaw exec tool hooks to command eve
   assert.equal(ended.payload.duration_ms, 300);
 });
 
+test('normalizeOpenClawEvent maps latest OpenClaw exec details exitCode', () => {
+  const [event] = normalizeOpenClawEvent({
+    hook: 'after_tool_call',
+    event: {
+      toolName: 'exec',
+      toolCallId: 'exec_false',
+      runId: 'run-openclaw-failure',
+      params: {
+        command: 'false'
+      },
+      result: {
+        content: [{ type: 'text', text: '\n\n(Command exited with code 1)' }],
+        details: {
+          status: 'completed',
+          exitCode: 1,
+          durationMs: 5
+        },
+        isError: false
+      }
+    },
+    ctx: {
+      sessionId: 'openclaw-session-failure',
+      runId: 'run-openclaw-failure',
+      toolName: 'exec',
+      toolCallId: 'exec_false'
+    }
+  }, {
+    now: '2026-05-05T12:05:00.000Z'
+  });
+
+  assert.equal(event.event_type, 'command.ended');
+  assert.equal(event.payload.binary, 'false');
+  assert.equal(event.payload.exit_code, 1);
+  assert.equal(event.payload.duration_ms, 5);
+});
+
 test('normalizeOpenClawEvent resolves explicit OpenClaw session keys to the underlying session id', () => {
   const [event] = normalizeOpenClawEvent({
     hook: 'after_tool_call',

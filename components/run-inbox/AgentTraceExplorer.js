@@ -1,8 +1,10 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { Background, Controls, Handle, MarkerType, Position, ReactFlow } from '@xyflow/react';
 
-import { percent, summarizeEvent } from './format.js';
+import { buildAgentActionFlow } from './action-flow.js';
+import { percent, summarizeEvent, trustBreakdownEntries, trustScoreValue } from './format.js';
 
 function h(type, props, ...children) {
   const normalizedChildren = children.flatMap((child) =>
@@ -29,8 +31,42 @@ const traceCopy = {
     searchSession: '搜索会话',
     noSessions: '没有会话匹配当前过滤条件。',
     selectSession: '选择一个会话查看它的追踪。',
+    sessionOverview: '会话纵览',
+    runSummary: '运行复盘',
+    runSummaryBody: '用 RunQ Trust Model 解释这次运行是否可信、Agent 走了哪些步骤，以及调用了哪些能力。',
+    finalConfidence: 'RunQ 信任分',
+    trustModel: 'Trust Model',
+    outcomeEvidence: 'Outcome 证据',
+    executionPath: '执行路径',
+    callFootprint: '调用足迹',
+    noToolFootprint: '没有工具、MCP 或 Skill 调用',
+    verificationSummary: '验证结果',
+    taskList: '任务列表',
+    taskFallbackTitle: '会话任务',
+    taskPrompt: '用户需求',
     evidenceTimeline: '证据时间线',
     groupedTraceEvents: '分组追踪事件',
+    taskFlow: '任务流程图',
+    taskFlowBody: '从用户需求到 Agent 调用模型、工具、命令、文件和反馈的整体过程。',
+    taskRecap: '任务复盘',
+    taskRequest: '用户需求',
+    taskPath: '关键路径',
+    taskResult: '结果',
+    workflowHint: '拖动画布查看完整流程，点击节点查看右侧详情。',
+    eventActionHelp: '原始事件是底层采集日志；流程节点是可视化后的任务步骤。',
+    redactionNote: '内容已按 metadata-first 隐私策略隐藏，只保留摘要、计数或哈希。',
+    actionCount: '流程节点',
+    rawEvents: '原始事件',
+    tools: '工具',
+    flowLaneModel: '模型层',
+    flowLaneTool: '普通工具',
+    flowLaneMcp: 'MCP',
+    flowLaneSkill: 'Skills',
+    flowLaneCommand: '命令',
+    flowLaneVerification: '验证',
+    flowLaneFile: '文件',
+    flowLaneOutcome: '结果',
+    flowLaneOther: '其他',
     sessionInspector: '节点详情',
     noSessionSelected: '未选择会话',
     framework: '框架',
@@ -40,10 +76,10 @@ const traceCopy = {
     failed: '失败',
     tokens: 'tokens',
     totalTokens: '总 Tokens',
-    outcomeConfidence: 'Outcome 可信度',
+    outcomeConfidence: 'Outcome 证据',
     satisfaction: '满意度',
     keyMetrics: '关键指标',
-    scoring: '评分与可信度',
+    scoring: 'RunQ Trust Model',
     metadata: '元数据',
     eventPayload: '事件载荷',
     sourceUnknown: '未知来源',
@@ -85,8 +121,42 @@ const traceCopy = {
     searchSession: 'Search session',
     noSessions: 'No sessions match the current filters.',
     selectSession: 'Select a session to inspect its trace.',
+    sessionOverview: 'Session Overview',
+    runSummary: 'Run Summary',
+    runSummaryBody: 'A structured RunQ Trust Model explanation of reliability, execution path, and capability calls for this run.',
+    finalConfidence: 'RunQ Trust Score',
+    trustModel: 'Trust Model',
+    outcomeEvidence: 'Outcome evidence',
+    executionPath: 'Execution path',
+    callFootprint: 'Call footprint',
+    noToolFootprint: 'No tool, MCP, or skill calls',
+    verificationSummary: 'Verification result',
+    taskList: 'Task List',
+    taskFallbackTitle: 'Session task',
+    taskPrompt: 'User request',
     evidenceTimeline: 'Evidence timeline',
     groupedTraceEvents: 'Grouped trace events',
+    taskFlow: 'Task flow',
+    taskFlowBody: 'End-to-end process from user request through model, tools, commands, files, and feedback.',
+    taskRecap: 'Task recap',
+    taskRequest: 'User request',
+    taskPath: 'Key path',
+    taskResult: 'Result',
+    workflowHint: 'Drag the canvas to inspect the full workflow. Click a node to open details on the right.',
+    eventActionHelp: 'Raw events are captured telemetry logs; workflow nodes are the visualized task steps.',
+    redactionNote: 'Content is hidden by the metadata-first privacy policy; only summaries, counts, or hashes are retained.',
+    actionCount: 'Workflow nodes',
+    rawEvents: 'raw events',
+    tools: 'Tools',
+    flowLaneModel: 'Model',
+    flowLaneTool: 'Tools',
+    flowLaneMcp: 'MCP',
+    flowLaneSkill: 'Skills',
+    flowLaneCommand: 'Commands',
+    flowLaneVerification: 'Verification',
+    flowLaneFile: 'Files',
+    flowLaneOutcome: 'Outcome',
+    flowLaneOther: 'Other',
     sessionInspector: 'Span Detail',
     noSessionSelected: 'No session selected',
     framework: 'Framework',
@@ -99,7 +169,7 @@ const traceCopy = {
     outcomeConfidence: 'Outcome Confidence',
     satisfaction: 'Satisfaction',
     keyMetrics: 'Key metrics',
-    scoring: 'Scoring & Confidence',
+    scoring: 'RunQ Trust Model',
     metadata: 'Metadata',
     eventPayload: 'Event payload',
     sourceUnknown: 'source unknown',
@@ -133,6 +203,9 @@ const sidebarItems = [
   { href: '/recommendations', viewKey: 'recommendations', icon: 'monitoring' },
   { href: '/setup', viewKey: 'setup', icon: 'settings' }
 ];
+
+const SESSION_AUTO_REFRESH_MS = 10000;
+const EVENT_AUTO_REFRESH_MS = 3000;
 
 const traceGroups = [
   {
@@ -171,6 +244,40 @@ function MaterialIcon({ name, className = '', filled = false, style }) {
   }, name);
 }
 
+function useMounted() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  return mounted;
+}
+
+function RunqLogo({ className = 'h-10 w-10' }) {
+  return h('svg', {
+    'aria-hidden': 'true',
+    className,
+    'data-logo': 'runq',
+    viewBox: '0 0 128 128'
+  }, [
+    h('defs', null, [
+      h('linearGradient', { id: 'runq-trace-mark-bg', gradientUnits: 'userSpaceOnUse', x1: '16', x2: '116', y1: '12', y2: '118' }, [
+        h('stop', { stopColor: '#111827' }),
+        h('stop', { offset: '1', stopColor: '#0050CB' })
+      ]),
+      h('linearGradient', { id: 'runq-trace-mark-orbit', gradientUnits: 'userSpaceOnUse', x1: '26', x2: '102', y1: '30', y2: '100' }, [
+        h('stop', { stopColor: '#00EEFC' }),
+        h('stop', { offset: '1', stopColor: '#0066FF' })
+      ])
+    ]),
+    h('rect', { fill: 'url(#runq-trace-mark-bg)', height: '128', rx: '28', width: '128' }),
+    h('path', { d: 'M30 66c0-21.5 15.7-38 37-38 17.6 0 30.8 11.4 34.4 27.7', fill: 'none', stroke: 'url(#runq-trace-mark-orbit)', strokeLinecap: 'round', strokeWidth: '10' }),
+    h('path', { d: 'M98 65c0 21.5-15.7 38-37 38-18 0-31.5-11.9-34.7-28.7', fill: 'none', stroke: '#F8FAFC', strokeLinecap: 'round', strokeWidth: '10' }),
+    h('path', { d: 'M75 87l18 18', stroke: '#F8FAFC', strokeLinecap: 'round', strokeWidth: '10' }),
+    h('circle', { cx: '67', cy: '66', fill: '#F8FAFC', r: '16' }),
+    h('circle', { cx: '67', cy: '66', fill: '#0050CB', r: '7' }),
+    h('circle', { cx: '101', cy: '54', fill: '#22C55E', r: '8' }),
+    h('path', { d: 'M97.5 54.2l2.4 2.5 5.1-6', fill: 'none', stroke: '#F8FAFC', strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: '2.8' })
+  ]);
+}
+
 function chip(label, tone = 'neutral', key) {
   const tones = {
     neutral: 'bg-surface-container-low text-on-surface-variant border border-outline-variant/40',
@@ -206,6 +313,101 @@ function eventMeta(event, t) {
   return event.privacy?.level || 'metadata';
 }
 
+function eventSortValue(event) {
+  const timestamp = Date.parse(event.timestamp || '');
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function firstInspectableEventId(events = []) {
+  return events.find((event) => !['session.started', 'session.ended', 'outcome.scored'].includes(event.event_type))?.event_id
+    ?? events[0]?.event_id
+    ?? null;
+}
+
+function promptSummary(event, t) {
+  return event?.payload?.prompt_summary || event?.payload?.task_summary || t.taskFallbackTitle;
+}
+
+function buildSessionTasks(events, t) {
+  const sorted = [...events].sort((a, b) => eventSortValue(a) - eventSortValue(b));
+  const promptIndexes = sorted
+    .map((event, index) => event.event_type === 'user.prompt.submitted' ? index : -1)
+    .filter((index) => index >= 0);
+
+  if (promptIndexes.length === 0) {
+    return [{
+      id: 'task_1',
+      index: 1,
+      title: sorted[0]?.payload?.task_summary || t.taskFallbackTitle,
+      summary: sorted[0]?.payload?.task_summary || t.selectSession,
+      events: sorted
+    }];
+  }
+
+  return promptIndexes.map((startIndex, index) => {
+    const nextStart = promptIndexes[index + 1] ?? sorted.length;
+    const taskEvents = sorted.slice(startIndex, nextStart);
+    const promptEvent = sorted[startIndex];
+    return {
+      id: `task_${index + 1}`,
+      index: index + 1,
+      title: `${t.taskPrompt} ${index + 1}`,
+      summary: promptSummary(promptEvent, t),
+      events: taskEvents
+    };
+  });
+}
+
+function buildTaskRecap(selectedTask, actions, t) {
+  const meaningful = actions.filter((action) => action.kind !== 'event');
+  const request = meaningful.find((action) => action.kind === 'requirement')?.detail
+    || selectedTask?.summary
+    || t.selectSession;
+  const path = meaningful
+    .filter((action) => !['requirement', 'outcome'].includes(action.kind))
+    .slice(0, 5)
+    .map((action) => action.title)
+    .join(' → ') || t.noSignal;
+  const outcome = [...meaningful].reverse().find((action) => ['outcome', 'verification', 'command', 'model'].includes(action.kind));
+  const result = outcome?.title || selectedTask?.events?.at(-1)?.event_type || t.noSignal;
+  const redacted = [request, path, result].some((value) => String(value || '').includes('[redacted]'))
+    || selectedTask?.events?.some((event) => event.privacy?.redacted || event.privacy?.level === 'metadata');
+  return { path, redacted, request, result };
+}
+
+function capabilityName(action) {
+  if (action.skill_name) return action.skill_name;
+  if (action.mcp_server && action.tool_name) return action.tool_name;
+  if (action.mcp_server) return action.mcp_server;
+  return action.tool_name || action.action_name || action.title;
+}
+
+function buildRunSummary(session, selectedTask, actions, t) {
+  const confidence = trustScoreValue(session?.quality);
+  const verifications = actions.filter((action) => action.kind === 'verification');
+  const passedVerifications = verifications.filter((action) => action.status !== 'failed').length;
+  const failedVerifications = verifications.length - passedVerifications;
+  const capabilityCalls = actions
+    .filter((action) => ['tool', 'mcp', 'skill'].includes(action.kind))
+    .map(capabilityName)
+    .filter(Boolean);
+  const uniqueCapabilities = Array.from(new Set(capabilityCalls));
+  const path = actions
+    .filter((action) => !['event'].includes(action.kind))
+    .slice(0, 6)
+    .map((action) => action.title)
+    .join(' → ') || t.noSignal;
+  return {
+    confidence,
+    footprint: uniqueCapabilities.join(' · ') || t.noToolFootprint,
+    path,
+    request: selectedTask?.summary || t.selectSession,
+    verification: verifications.length
+      ? `${passedVerifications}/${verifications.length} ${t.verification}${failedVerifications ? ` · ${failedVerifications} ${t.failed}` : ''}`
+      : t.noSignal
+  };
+}
+
 function timeLabel(timestamp) {
   if (!timestamp) return '-';
   const date = new Date(timestamp);
@@ -218,10 +420,11 @@ function Sidebar({ activeView }) {
     className: 'fixed left-0 top-0 z-50 flex h-screen w-20 flex-col items-center border-r border-white/30 bg-white/70 py-8 shadow-2xl shadow-primary/5 backdrop-blur-xl'
   }, [
     h('a', {
-      className: 'mb-12 font-mono text-xl font-black tracking-tighter text-primary-container hover:scale-105 transition-transform',
+      'aria-label': 'RunQ Agents',
+      className: 'mb-12 rounded-2xl transition-transform hover:scale-105',
       href: '/agents',
       key: 'logo'
-    }, 'RQ'),
+    }, h(RunqLogo, { className: 'h-11 w-11' })),
     h('nav', { className: 'flex flex-1 flex-col items-center gap-6', key: 'nav' }, sidebarItems.map((item) => {
       const active = item.viewKey === activeView;
       return h('a', {
@@ -339,6 +542,41 @@ function SessionPicker({ sessions, selectedSessionId, onSelect, framework, setFr
   ]);
 }
 
+function TaskList({ tasks, selectedTaskId, onSelectTask, t }) {
+  return h('section', { className: 'glass-card rounded-3xl p-lg', 'data-task-list': 'session-tasks' }, [
+    h('div', { className: 'mb-md flex items-center justify-between gap-3' }, [
+      h('div', null, [
+        h('div', { className: 'text-label-caps font-label-caps uppercase text-outline' }, t.taskList),
+        h('h3', { className: 'mt-2 text-h3 font-h3 tracking-tight' }, `${tasks.length} ${t.taskFlow}`)
+      ]),
+      chip(String(tasks.length), tasks.length ? 'info' : 'neutral', 'tasks')
+    ]),
+    tasks.length === 0
+      ? h('p', { className: 'rounded-2xl border border-dashed border-outline-variant/50 p-md text-sm text-outline' }, t.selectSession)
+      : h('div', { className: 'grid gap-2 sm:grid-cols-2' }, tasks.map((task) =>
+          h('button', {
+            className: [
+              'rounded-2xl border p-md text-left transition-all',
+              selectedTaskId === task.id
+                ? 'border-primary bg-primary/5 shadow-[0_0_15px_rgba(0,102,255,0.14)]'
+                : 'border-outline-variant/40 bg-white/65 hover:border-primary/40'
+            ].join(' '),
+            'data-task-id': task.id,
+            'data-selected': selectedTaskId === task.id ? 'true' : 'false',
+            key: task.id,
+            onClick: () => onSelectTask(task.id),
+            type: 'button'
+          }, [
+            h('div', { className: 'mb-2 flex items-center justify-between gap-2' }, [
+              h('span', { className: 'font-mono text-mono text-outline' }, String(task.index).padStart(2, '0')),
+              chip(`${task.events.length} ${t.rawEvents}`, 'neutral', 'events')
+            ]),
+            h('div', { className: 'line-clamp-2 text-sm font-semibold leading-6 text-on-surface' }, task.summary || task.title)
+          ])
+        ))
+  ]);
+}
+
 function SelectedEventPanel({ event, t }) {
   if (!event) {
     return h('section', {
@@ -363,6 +601,12 @@ function SelectedEventPanel({ event, t }) {
       h('div', { className: 'flex justify-between gap-3' }, [h('span', { className: 'text-outline' }, t.eventSource), h('span', { className: 'font-mono text-mono' }, event.source || t.sourceUnknown)]),
       h('div', { className: 'flex justify-between gap-3' }, [h('span', { className: 'text-outline' }, t.privacyMode), h('span', { className: 'font-mono text-mono' }, event.privacy?.level || 'metadata')])
     ]),
+    event.privacy?.redacted || event.privacy?.level !== 'raw'
+      ? h('p', {
+          className: 'mt-md rounded-2xl border border-dashed border-outline-variant/50 bg-surface-container-low/50 p-3 text-xs leading-5 text-outline',
+          'data-redaction-note': 'metadata-first'
+        }, t.redactionNote)
+      : null,
     h('div', { className: 'mt-md' }, [
       h('div', { className: 'mb-1 text-label-caps font-label-caps uppercase text-outline' }, t.eventPayload),
       h('pre', { className: 'max-h-72 overflow-auto rounded-2xl bg-slate-950 p-3 font-mono text-mono text-blue-300' }, JSON.stringify(event.payload || {}, null, 2))
@@ -432,18 +676,347 @@ function TimelineGroup({ group, t, selectedEventId, onSelectEvent }) {
   ]);
 }
 
+function actionIcon(kind) {
+  return {
+    requirement: 'chat',
+    model: 'memory',
+    tool: 'build',
+    mcp: 'hub',
+    skill: 'psychology',
+    command: 'terminal',
+    verification: 'fact_check',
+    file: 'description',
+    permission: 'lock_open',
+    step: 'route',
+    outcome: 'verified',
+    event: 'fiber_manual_record'
+  }[kind] || 'fiber_manual_record';
+}
+
+function actionTone(status) {
+  if (status === 'failed') return 'border-error/50 bg-error-container/40 text-on-error-container';
+  if (status === 'completed') return 'border-green-200 bg-green-50/70 text-green-800';
+  if (status === 'running') return 'border-primary/30 bg-primary/5 text-primary-container';
+  return 'border-outline-variant/40 bg-white/70 text-on-surface';
+}
+
+function FlowActionCard({ action, selectedEventId, onSelectEvent }) {
+  return h('button', {
+    'data-flow-action-id': action.event_id,
+    'data-flow-action-name': action.action_name,
+    'data-flow-action-kind': action.kind,
+    'data-flow-action-phase': action.phase,
+    'data-flow-action-type': action.action_type,
+    'data-flow-action-duration-ms': action.duration_ms,
+    'data-flow-mcp-server': action.mcp_server,
+    'data-flow-skill-name': action.skill_name,
+    className: [
+      'min-w-[220px] max-w-[260px] rounded-2xl border p-md text-left transition-all hover:border-primary/40',
+      actionTone(action.status),
+      selectedEventId === action.event_id ? 'ring-2 ring-primary/25' : ''
+    ].join(' '),
+    onClick: () => onSelectEvent?.(action.event_id),
+    title: action.event_type,
+    type: 'button'
+  }, [
+    h('div', { className: 'flex items-start justify-between gap-2' }, [
+      h('div', { className: 'min-w-0' }, [
+        h('div', { className: 'flex items-center gap-2' }, [
+          h('span', { className: 'font-mono text-mono text-outline' }, String(action.index).padStart(2, '0')),
+          h('span', { className: 'truncate text-sm font-semibold text-on-surface' }, action.title)
+        ]),
+        h('p', { className: 'mt-1 text-xs leading-5 text-on-surface-variant' }, action.detail)
+      ]),
+      h(MaterialIcon, { className: 'shrink-0 text-[18px] text-outline', name: actionIcon(action.kind) })
+    ]),
+    h('div', { className: 'mt-2 flex flex-wrap items-center gap-2 font-mono text-[10px] text-outline' }, [
+      h('span', null, action.event_type),
+      action.tool_name ? h('span', null, `tool=${action.tool_name}`) : null,
+      action.mcp_server ? h('span', null, `mcp=${action.mcp_server}`) : null,
+      action.skill_name ? h('span', null, `skill=${action.skill_name}`) : null,
+      h('span', null, timeLabel(action.timestamp))
+    ])
+  ]);
+}
+
+function TimelineGraph({ actions, selectedEventId, onSelectEvent }) {
+  const edges = actions.slice(1).map((action, index) => ({
+    from: actions[index],
+    to: action
+  }));
+  return h('div', { className: 'overflow-x-auto pb-2', 'data-flow-layout': 'timeline-graph' }, [
+    h('div', { className: 'relative min-w-max pb-2' }, [
+      h('div', { className: 'absolute left-6 right-6 top-[50%] h-px -translate-y-1/2 bg-gradient-to-r from-primary/50 via-outline-variant to-primary/20' }),
+      h('div', { className: 'absolute inset-x-0 top-[50%] flex -translate-y-1/2 justify-between px-[140px]' }, edges.map((edge) =>
+        h('span', {
+          'aria-hidden': 'true',
+          className: 'h-2 w-2 rotate-45 border-r-2 border-t-2 border-primary/50',
+          'data-flow-edge-from': edge.from.event_id,
+          'data-flow-edge-to': edge.to.event_id,
+          key: `${edge.from.event_id}-${edge.to.event_id}`
+        })
+      )),
+      h('ol', { className: 'relative z-10 flex items-stretch gap-4' }, actions.map((action) =>
+        h('li', {
+          className: 'flex min-h-[190px] w-[260px] shrink-0 flex-col',
+          'data-flow-node-kind': action.kind,
+          key: action.id
+        }, [
+          h('div', { className: 'mb-2 flex items-center gap-2 text-label-caps font-label-caps uppercase text-outline' }, [
+            h(MaterialIcon, { className: 'text-[16px]', name: actionIcon(action.kind) }),
+            h('span', null, action.kind)
+          ]),
+          h(FlowActionCard, { action, selectedEventId, onSelectEvent })
+        ])
+      ))
+    ])
+  ]);
+}
+
+function workflowNodeTypeForAction(action, index, total) {
+  if (action.status === 'failed') return 'error';
+  if (index === 0 || action.kind === 'requirement') return 'trigger';
+  if (index === total - 1 || action.kind === 'outcome') return 'success';
+  return 'operation';
+}
+
+function TaskWorkflowNode({ data }) {
+  const { action, index, onSelect, selected, total } = data;
+  const nodeType = workflowNodeTypeForAction(action, index, total);
+  const accent = selected ? 'border-primary shadow-[0_0_18px_rgba(0,102,255,0.20)]' : nodeType === 'error' ? 'border-error/50 bg-error-container/30' : 'border-outline-variant/50 bg-white';
+  return h('div', {
+    className: `relative w-[320px] cursor-grab rounded-2xl border ${accent} bg-white p-md text-left shadow-sm transition-all hover:border-primary/50 active:cursor-grabbing`,
+    'data-flow-action-id': action.event_id,
+    'data-flow-action-kind': action.kind,
+    'data-flow-action-name': action.action_name,
+    'data-flow-action-phase': action.phase,
+    'data-flow-action-type': action.action_type,
+    'data-flow-action-duration-ms': action.duration_ms,
+    'data-flow-mcp-server': action.mcp_server,
+    'data-flow-skill-name': action.skill_name,
+    'data-click-opens-detail': 'true',
+    'data-workflow-node-type': nodeType,
+    onKeyDown: (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        onSelect?.(action.event_id);
+      }
+    },
+    onClick: () => onSelect?.(action.event_id),
+    role: 'button',
+    tabIndex: 0
+  }, [
+    index > 0 ? h(Handle, {
+      className: '!h-3 !w-3 !border-2 !border-white !bg-primary',
+      'data-workflow-port': 'input',
+      position: Position.Left,
+      type: 'target'
+    }) : null,
+    index < total - 1 ? h(Handle, {
+      className: '!h-3 !w-3 !border-2 !border-white !bg-primary',
+      'data-workflow-port': 'output',
+      position: Position.Right,
+      type: 'source'
+    }) : null,
+    h('div', { className: 'mb-3 flex items-start justify-between gap-3' }, [
+      h('div', { className: 'flex min-w-0 items-center gap-2' }, [
+        h('div', { className: 'grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-surface-container-low text-on-surface-variant' },
+          h(MaterialIcon, { className: 'text-[19px]', name: actionIcon(action.kind) })
+        ),
+        h('div', { className: 'min-w-0' }, [
+          h('div', { className: 'truncate text-sm font-semibold text-on-surface' }, action.title),
+          h('div', { className: 'font-mono text-[10px] uppercase text-outline' }, action.event_type)
+        ])
+      ]),
+      h('span', { className: 'shrink-0 font-mono text-[11px] text-outline' }, timeLabel(action.timestamp))
+    ]),
+    h('p', { className: 'line-clamp-2 text-xs leading-5 text-on-surface-variant' }, action.detail),
+    h('div', { className: 'mt-3 flex flex-wrap items-center gap-2 font-mono text-[10px] text-outline' }, [
+      h('span', null, action.label || action.kind),
+      action.tool_name ? h('span', null, `tool=${action.tool_name}`) : null,
+      action.mcp_server ? h('span', null, `mcp=${action.mcp_server}`) : null,
+      action.skill_name ? h('span', null, `skill=${action.skill_name}`) : null
+    ])
+  ]);
+}
+
+const taskNodeTypes = { taskAction: TaskWorkflowNode };
+
+function StaticTaskWorkflow({ actions, selectedEventId, onSelectEvent }) {
+  const edges = actions.slice(1).map((action, index) => ({ from: actions[index], to: action }));
+  return h('div', {
+    className: 'relative min-w-max rounded-2xl border border-outline-variant/35 bg-surface-container-lowest/70 p-4',
+    'data-flow-layout': 'timeline-graph',
+    'data-task-workflow': 'react-flow',
+    'data-workflow-canvas-height': 'compact',
+    'data-workflow-interaction': 'pan-drag-click',
+    'data-workflow-node-size': 'readable',
+    'data-workflow-viewport': 'content-first'
+  }, [
+    h('svg', { 'aria-hidden': 'true', className: 'pointer-events-none absolute inset-0 h-full w-full overflow-visible' }, [
+      h('defs', null,
+        h('marker', { id: 'task-workflow-arrow', markerHeight: '8', markerWidth: '8', orient: 'auto', refX: '7', refY: '4' },
+          h('path', { d: 'M0,0 L8,4 L0,8 Z', fill: '#0050CB' })
+        )
+      ),
+      ...edges.map((edge, index) => {
+        const startX = 318 + index * 364;
+        const endX = startX + 64;
+        return h('path', {
+          d: `M ${startX} 96 C ${startX + 24} 96 ${endX - 24} 96 ${endX} 96`,
+          fill: 'none',
+          key: `${edge.from.event_id}-${edge.to.event_id}`,
+          markerEnd: 'url(#task-workflow-arrow)',
+          stroke: '#0050CB',
+          strokeOpacity: '0.45',
+          strokeWidth: '2',
+          'data-flow-edge-from': edge.from.event_id,
+          'data-flow-edge-to': edge.to.event_id
+        });
+      })
+    ]),
+    h('ol', { className: 'relative z-10 flex items-start gap-[64px]' }, actions.map((action, index) =>
+      h('li', { className: 'shrink-0', key: action.id }, [
+        h('div', { className: 'relative' }, [
+          index > 0 ? h('span', { className: 'absolute -left-[6px] top-[88px] z-20 h-3 w-3 rounded-full border-2 border-white bg-primary shadow-sm', 'data-workflow-port': 'input' }) : null,
+          index < actions.length - 1 ? h('span', { className: 'absolute -right-[6px] top-[88px] z-20 h-3 w-3 rounded-full border-2 border-white bg-primary shadow-sm', 'data-workflow-port': 'output' }) : null,
+          h('div', {
+            'data-click-opens-detail': 'true',
+            'data-workflow-node-type': workflowNodeTypeForAction(action, index, actions.length)
+          },
+            h(FlowActionCard, { action, onSelectEvent, selectedEventId })
+          )
+        ])
+      ])
+    ))
+  ]);
+}
+
+function TaskWorkflowCanvas({ actions, selectedEventId, onSelectEvent }) {
+  const mounted = useMounted();
+  const nodes = useMemo(() => actions.map((action, index) => ({
+    id: action.event_id,
+    type: 'taskAction',
+    position: { x: 32 + index * 390, y: 48 },
+    data: {
+      action,
+      index,
+      onSelect: onSelectEvent,
+      selected: selectedEventId === action.event_id,
+      total: actions.length
+    }
+  })), [actions, onSelectEvent, selectedEventId]);
+  const edges = useMemo(() => actions.slice(1).map((action, index) => ({
+    id: `${actions[index].event_id}-${action.event_id}`,
+    source: actions[index].event_id,
+    target: action.event_id,
+    type: 'smoothstep',
+    markerEnd: { type: MarkerType.ArrowClosed, color: '#0050CB' },
+    style: { stroke: '#0050CB', strokeOpacity: 0.5, strokeWidth: 2 }
+  })), [actions]);
+
+  return h('div', {
+    className: 'overflow-hidden rounded-2xl border border-outline-variant/35 bg-surface-container-lowest/70',
+    'data-workflow-canvas-height': 'compact',
+    'data-workflow-interaction': 'pan-drag-click',
+    'data-workflow-node-size': 'readable',
+    'data-workflow-viewport': 'content-first'
+  }, [
+    mounted
+      ? h('div', { className: 'h-[310px]', 'data-flow-layout': 'timeline-graph', 'data-task-workflow': 'react-flow' },
+          h(ReactFlow, {
+            colorMode: 'light',
+            defaultViewport: { x: 0, y: 0, zoom: 1 },
+            edges,
+            maxZoom: 1.35,
+            minZoom: 0.7,
+            nodeTypes: taskNodeTypes,
+            nodes,
+            nodesConnectable: false,
+            nodesDraggable: true,
+            onNodeClick: (_event, node) => onSelectEvent?.(node.id),
+            panOnDrag: true,
+            panOnScroll: true,
+            proOptions: { hideAttribution: true },
+            zoomOnDoubleClick: false
+          }, [
+            h(Background, { color: '#c2c6d8', gap: 18, size: 1 }),
+            h(Controls, { showInteractive: false })
+          ])
+        )
+      : h(StaticTaskWorkflow, { actions, onSelectEvent, selectedEventId })
+  ]);
+}
+
+function TaskFlow({ actions, selectedEventId, onSelectEvent, selectedTask, t }) {
+  const toolCount = actions.filter((action) => action.kind === 'tool').length;
+  const recap = buildTaskRecap(selectedTask, actions, t);
+  return h('section', {
+    className: 'glass-card-strong rounded-3xl p-lg',
+    'data-action-flow': 'agent-task-flow',
+    'data-selected-task-id': selectedTask?.id || ''
+  }, [
+    h('div', { className: 'mb-lg flex flex-wrap items-start justify-between gap-4' }, [
+      h('div', null, [
+        h('span', { className: 'text-label-caps font-label-caps uppercase text-primary' }, t.taskFlow),
+        h('h3', { className: 'mt-2 text-h3 font-h3 tracking-tight' }, selectedTask?.summary || t.taskFlow),
+        h('p', { className: 'mt-2 max-w-2xl text-sm leading-6 text-on-surface-variant' }, t.taskFlowBody)
+      ]),
+      h('div', { className: 'flex gap-2' }, [
+        chip(`${actions.length} ${t.actionCount}`, 'info', 'actions'),
+        chip(`${toolCount} ${t.tools}`, toolCount ? 'good' : 'neutral', 'tools')
+      ])
+    ]),
+    actions.length === 0
+      ? h('p', { className: 'rounded-2xl border border-dashed border-outline-variant/50 p-md text-sm text-outline' }, t.selectSession)
+      : [
+          h('div', {
+            className: 'mb-md grid gap-3 rounded-2xl border border-outline-variant/35 bg-white/65 p-md md:grid-cols-3',
+            'data-task-recap': 'trace-summary',
+            key: 'recap'
+          }, [
+            h('div', { className: 'md:col-span-3 flex items-center gap-2 text-label-caps font-label-caps uppercase text-primary' }, [
+              h(MaterialIcon, { className: 'text-[16px]', name: 'summarize' }),
+              h('span', null, t.taskRecap)
+            ]),
+            h('div', null, [
+              h('p', { className: 'text-label-caps font-label-caps uppercase text-outline' }, t.taskRequest),
+              h('p', { className: 'mt-1 line-clamp-3 text-sm font-semibold leading-6 text-on-surface' }, recap.request)
+            ]),
+            h('div', null, [
+              h('p', { className: 'text-label-caps font-label-caps uppercase text-outline' }, t.taskPath),
+              h('p', { className: 'mt-1 line-clamp-3 text-sm leading-6 text-on-surface-variant' }, recap.path)
+            ]),
+            h('div', null, [
+              h('p', { className: 'text-label-caps font-label-caps uppercase text-outline' }, t.taskResult),
+              h('p', { className: 'mt-1 line-clamp-3 text-sm leading-6 text-on-surface-variant' }, recap.result)
+            ]),
+            recap.redacted
+              ? h('p', {
+                  className: 'md:col-span-3 rounded-xl border border-dashed border-outline-variant/45 bg-surface-container-low/50 px-3 py-2 text-xs leading-5 text-outline',
+                  'data-redaction-note': 'metadata-first'
+                }, t.redactionNote)
+              : null
+          ]),
+          h('p', { className: 'mb-3 text-xs leading-5 text-outline', key: 'hint' }, [t.workflowHint, ' ', t.eventActionHelp]),
+          h(TaskWorkflowCanvas, { actions, key: selectedTask?.id || 'task-workflow', onSelectEvent, selectedEventId })
+        ]
+  ]);
+}
+
 function ResultBadge({ session, t }) {
   if (!session) return null;
-  const score = Math.round((session.quality?.outcome_confidence || 0) * 100);
+  const score = trustScoreValue(session.quality);
   const tokens = session.telemetry?.total_tokens || 0;
   const cmds = session.telemetry?.command_count || 0;
   const verified = (session.telemetry?.verification_count || 0) - (session.telemetry?.verification_failed_count || 0);
-  return h('div', { className: 'glass-card-strong relative flex flex-wrap items-center justify-between gap-md overflow-hidden rounded-3xl p-lg' }, [
+  return h('div', { className: 'glass-card-strong relative flex flex-wrap items-center justify-between gap-md overflow-hidden rounded-3xl p-lg', 'data-session-overview': 'selected-session' }, [
     h('div', { className: 'flex items-center gap-md' }, [
       h('div', { className: 'grid h-16 w-16 place-items-center rounded-2xl bg-green-500/10 text-green-600 shadow-[0_0_20px_rgba(34,197,94,0.20)]' },
         h(MaterialIcon, { className: 'text-[40px]', filled: true, name: 'check_circle' })
       ),
       h('div', null, [
+        h('div', { className: 'mb-1 text-label-caps font-label-caps uppercase text-outline' }, t.sessionOverview),
         h('div', { className: 'flex items-center gap-2' }, [
           h('span', { className: 'text-h3 font-h3 tracking-tight text-green-600' }, session.session_id),
           chip(t.completed, 'good', 'done')
@@ -468,8 +1041,66 @@ function ResultBadge({ session, t }) {
   ]);
 }
 
+function RunSummaryPanel({ actions, selectedTask, session, t }) {
+  if (!session) return null;
+  const summary = buildRunSummary(session, selectedTask, actions, t);
+  const dimensions = trustBreakdownEntries(session.quality);
+  return h('section', {
+    className: 'glass-card-strong rounded-3xl p-lg',
+    'data-run-summary': 'trace-run-summary'
+  }, [
+    h('div', { className: 'mb-md flex flex-wrap items-start justify-between gap-4' }, [
+      h('div', null, [
+        h('span', { className: 'text-label-caps font-label-caps uppercase text-primary' }, t.runSummary),
+        h('h3', { className: 'mt-2 text-h3 font-h3 tracking-tight' }, summary.request),
+        h('p', { className: 'mt-2 max-w-3xl text-sm leading-6 text-on-surface-variant' }, t.runSummaryBody)
+      ]),
+      chip(`${summary.confidence}%`, summary.confidence >= 80 ? 'good' : summary.confidence >= 50 ? 'warn' : 'bad', 'confidence')
+    ]),
+    h('div', { className: 'grid gap-md md:grid-cols-3' }, [
+      h('article', { className: 'rounded-2xl border border-outline-variant/30 bg-white/65 p-md' }, [
+        h('p', { className: 'text-label-caps font-label-caps uppercase text-outline' }, t.finalConfidence),
+        h('p', { className: 'mt-2 font-mono text-h3 font-h3 tracking-tight text-on-surface' }, `${summary.confidence}%`),
+        h('p', { className: 'mt-1 text-xs leading-5 text-outline' }, summary.verification)
+      ]),
+      h('article', { className: 'rounded-2xl border border-outline-variant/30 bg-white/65 p-md' }, [
+        h('p', { className: 'text-label-caps font-label-caps uppercase text-outline' }, t.callFootprint),
+        h('p', { className: 'mt-2 text-sm font-semibold leading-6 text-on-surface' }, summary.footprint)
+      ]),
+      h('article', { className: 'rounded-2xl border border-outline-variant/30 bg-white/65 p-md' }, [
+        h('p', { className: 'text-label-caps font-label-caps uppercase text-outline' }, t.verificationSummary),
+        h('p', { className: 'mt-2 text-sm font-semibold leading-6 text-on-surface' }, summary.verification)
+      ])
+    ]),
+    h('div', { className: 'mt-md rounded-2xl border border-outline-variant/30 bg-surface-container-low/55 p-md' }, [
+      h('p', { className: 'text-label-caps font-label-caps uppercase text-outline' }, t.executionPath),
+      h('p', { className: 'mt-2 text-sm leading-6 text-on-surface-variant' }, summary.path)
+    ]),
+    dimensions.length
+      ? h('div', { className: 'mt-md rounded-2xl border border-outline-variant/30 bg-white/60 p-md' }, [
+          h('p', { className: 'text-label-caps font-label-caps uppercase text-outline' }, t.trustModel),
+          h('div', { className: 'mt-3 grid gap-2 md:grid-cols-3' }, dimensions.map((dimension) =>
+            h('div', { className: 'rounded-xl bg-surface-container-low/60 p-3', key: dimension.key }, [
+              h('div', { className: 'flex items-center justify-between gap-2 text-sm' }, [
+                h('span', { className: 'font-semibold text-on-surface' }, dimension.label),
+                h('span', { className: 'font-mono text-mono font-bold text-primary' }, `${dimension.score}%`)
+              ]),
+              h('div', { className: 'mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100' },
+                h('div', { className: 'h-full rounded-full bg-gradient-to-r from-primary to-secondary-container', style: { width: `${dimension.score}%` } })
+              )
+            ])
+          ))
+        ])
+      : null
+    
+  ]);
+}
+
 function Inspector({ session, events, selectedEvent, t }) {
   const tele = session?.telemetry || {};
+  const toolCalls = tele.tool_call_count || 0;
+  const trustScore = trustScoreValue(session?.quality);
+  const dimensions = trustBreakdownEntries(session?.quality);
   return h('aside', { className: 'space-y-gutter' }, [
     h(SelectedEventPanel, { event: selectedEvent, key: 'selected', t }),
     h('section', { className: 'glass-card rounded-3xl p-lg' }, [
@@ -498,6 +1129,10 @@ function Inspector({ session, events, selectedEvent, t }) {
         h('div', null, [
           h('div', { className: 'text-label-caps font-label-caps uppercase text-outline' }, t.commands),
           h('div', { className: 'mt-1 font-mono text-h3 font-h3 tracking-tight' }, tele.command_count || 0)
+        ]),
+        h('div', null, [
+          h('div', { className: 'text-label-caps font-label-caps uppercase text-outline' }, t.tools),
+          h('div', { className: 'mt-1 font-mono text-h3 font-h3 tracking-tight' }, toolCalls)
         ])
       ])
     ]),
@@ -505,12 +1140,22 @@ function Inspector({ session, events, selectedEvent, t }) {
       h('h3', { className: 'mb-md text-label-caps font-label-caps uppercase text-outline' }, t.scoring),
       h('div', { className: 'space-y-2' }, [
         h('div', { className: 'flex items-center justify-between text-sm' }, [
-          h('span', { className: 'text-on-surface-variant' }, t.outcomeConfidence),
-          h('span', { className: 'font-mono text-mono font-bold text-primary' }, `${percent(session?.quality?.outcome_confidence)}%`)
+          h('span', { className: 'text-on-surface-variant' }, t.finalConfidence),
+          h('span', { className: 'font-mono text-mono font-bold text-primary' }, `${trustScore}%`)
         ]),
         h('div', { className: 'h-1.5 overflow-hidden rounded-full bg-slate-100' },
-          h('div', { className: 'h-full bg-gradient-to-r from-primary to-secondary-container', style: { width: `${percent(session?.quality?.outcome_confidence)}%` } })
+          h('div', { className: 'h-full bg-gradient-to-r from-primary to-secondary-container', style: { width: `${trustScore}%` } })
         ),
+        dimensions.length
+          ? h('div', { className: 'mt-md space-y-2' }, dimensions.map((dimension) =>
+              h('div', { className: 'rounded-xl bg-surface-container-low/60 p-2', key: dimension.key }, [
+                h('div', { className: 'flex items-center justify-between gap-2 text-xs' }, [
+                  h('span', { className: 'font-semibold text-on-surface-variant' }, dimension.label),
+                  h('span', { className: 'font-mono text-mono text-primary' }, `${dimension.score}%`)
+                ])
+              ])
+            ))
+          : null,
         Number(tele.verification_failed_count || 0) > 0
           ? h('p', { className: 'mt-md rounded-2xl bg-error-container/60 px-3 py-2 text-sm text-on-error-container' }, `${tele.verification_failed_count} ${t.failed}`)
           : null
@@ -538,13 +1183,31 @@ export function AgentTraceExplorer({ initialSessions = [], initialEvents = [], i
   );
   const [framework, setFramework] = useState('all');
   const [query, setQuery] = useState('');
-  const [selectedEventId, setSelectedEventId] = useState(initialSelectedEventId ?? initialEvents[0]?.event_id ?? null);
+  const [selectedEventId, setSelectedEventId] = useState(initialSelectedEventId ?? firstInspectableEventId(initialEvents));
+  const [selectedTaskId, setSelectedTaskId] = useState(null);
 
   useEffect(() => {
     const stored = getStoredLang();
     const normalized = normalizeLang(stored);
     if (stored && normalized !== lang) setLangState(normalized);
   }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      refresh().catch(() => {});
+    }, SESSION_AUTO_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [selectedSessionId]);
+
+  useEffect(() => {
+    if (!selectedSessionId) return undefined;
+    const timer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      refreshEventsForSession(selectedSessionId).catch(() => {});
+    }, EVENT_AUTO_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [selectedSessionId]);
 
   function setLang(next) {
     const normalized = normalizeLang(next);
@@ -561,6 +1224,9 @@ export function AgentTraceExplorer({ initialSessions = [], initialEvents = [], i
 
   const selectedSession = sessions.find((s) => s.session_id === selectedSessionId) ?? visibleSessions[0] ?? null;
   const groupedEvents = groupEvents(events, t);
+  const tasks = useMemo(() => buildSessionTasks(events, t), [events, t]);
+  const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? tasks[0] ?? null;
+  const actionFlow = useMemo(() => buildAgentActionFlow(selectedTask?.events || []), [selectedTask]);
   const selectedEvent = useMemo(() => events.find((e) => e.event_id === selectedEventId) ?? events[0] ?? null, [events, selectedEventId]);
   const notificationCount = sessions.reduce((sum, session) =>
     sum + (session.recommendations || []).filter((rec) => !rec.state || rec.state.status === 'new').length,
@@ -574,28 +1240,39 @@ export function AgentTraceExplorer({ initialSessions = [], initialEvents = [], i
 
   async function selectSession(sessionId) {
     setSelectedSessionId(sessionId);
+    const next = await refreshEventsForSession(sessionId);
+    setSelectedTaskId(null);
+    setSelectedEventId(firstInspectableEventId(next));
+  }
+
+  async function refreshEventsForSession(sessionId) {
     const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/events`);
     const next = await response.json();
     setEvents(next);
-    setSelectedEventId(next[0]?.event_id ?? null);
+    return next;
   }
 
-  return h('div', { className: 'min-h-screen text-on-background', 'data-selected-session-id': selectedSession?.session_id || '' }, [
+  function selectTask(taskId) {
+    setSelectedTaskId(taskId);
+    const task = tasks.find((item) => item.id === taskId);
+    const firstAction = buildAgentActionFlow(task?.events || [])[0];
+    if (firstAction) setSelectedEventId(firstAction.event_id);
+  }
+
+  return h('div', {
+    className: 'min-h-screen text-on-background',
+    'data-auto-refresh-events-ms': EVENT_AUTO_REFRESH_MS,
+    'data-auto-refresh-sessions-ms': SESSION_AUTO_REFRESH_MS,
+    'data-selected-session-id': selectedSession?.session_id || ''
+  }, [
     h(Sidebar, { activeView: 'traces', key: 'sidebar' }),
     h(TopBar, { key: 'top', lang, notificationCount, onRefresh: refresh, searchQuery: query, setLang, t }),
     h('main', { className: 'ml-20 pt-16 px-8 pb-12 min-h-screen' }, [
       h('div', { className: 'mx-auto max-w-[1400px] space-y-margin' }, [
-        h('header', { className: 'flex flex-wrap justify-between items-end gap-4', key: 'head' }, [
+        h('header', { className: 'mb-lg flex flex-wrap items-end justify-between gap-4', key: 'head' }, [
           h('div', null, [
-            h('nav', { className: 'flex items-center gap-2 text-outline text-xs mb-2' }, [
-              h('span', null, t.home),
-              h(MaterialIcon, { className: 'text-[12px]', name: 'chevron_right', key: 'arr' }),
-              h('span', null, t.traceExplorer),
-              h(MaterialIcon, { className: 'text-[12px]', name: 'chevron_right', key: 'arr2' }),
-              h('span', { className: 'font-semibold text-primary font-mono text-mono' }, selectedSession?.session_id || '-')
-            ]),
-            h('span', { className: 'text-xs font-mono font-bold uppercase tracking-widest text-primary' }, t.eyebrow),
-            h('h2', { className: 'mt-1 text-h2 font-h2 tracking-tight' }, t.title),
+            h('span', { className: 'font-mono text-xs font-bold uppercase tracking-widest text-primary' }, t.eyebrow),
+            h('h2', { className: 'mt-2 text-h2 font-h2 tracking-tight text-on-surface' }, t.title),
             h('p', { className: 'mt-2 max-w-2xl text-body-md text-on-surface-variant' }, t.subtitle)
           ]),
           h('div', { className: 'flex gap-3' }, [
@@ -610,15 +1287,18 @@ export function AgentTraceExplorer({ initialSessions = [], initialEvents = [], i
           ])
         ]),
         selectedSession ? h(ResultBadge, { key: 'badge', session: selectedSession, t }) : null,
+        selectedSession ? h(RunSummaryPanel, { actions: actionFlow, key: 'run-summary', selectedTask, session: selectedSession, t }) : null,
         h('div', { className: 'grid grid-cols-1 lg:grid-cols-12 gap-gutter', key: 'body' }, [
           h('section', { className: 'lg:col-span-8 space-y-gutter' }, [
+            h(TaskList, { key: 'tasks', onSelectTask: selectTask, selectedTaskId: selectedTask?.id || '', tasks, t }),
+            h(TaskFlow, { actions: actionFlow, key: 'task-flow', onSelectEvent: setSelectedEventId, selectedEventId: selectedEvent?.event_id ?? null, selectedTask, t }),
             h('div', { className: 'glass-card-strong rounded-3xl p-lg' }, [
               h('span', { className: 'text-label-caps font-label-caps uppercase text-primary' }, t.evidenceTimeline),
               h('h3', { className: 'mt-2 text-h3 font-h3 tracking-tight' }, t.groupedTraceEvents)
             ]),
             groupedEvents.length === 0
               ? h('p', { className: 'glass-card rounded-3xl border-dashed p-lg text-sm text-outline' }, t.selectSession)
-              : h('div', { className: 'space-y-lg' }, groupedEvents.map((g) =>
+              : h('div', { className: 'space-y-lg', 'data-evidence-list': 'event-groups' }, groupedEvents.map((g) =>
                   h(TimelineGroup, {
                     group: g, key: g.id,
                     onSelectEvent: setSelectedEventId,

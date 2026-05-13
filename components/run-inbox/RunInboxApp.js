@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 
-import { eventKind, percent, summarizeEvent } from './format.js';
+import { eventKind, percent, summarizeEvent, trustBreakdownEntries, trustScoreValue } from './format.js';
 
 function h(type, props, ...children) {
   const normalizedChildren = children.flatMap((child) =>
@@ -24,7 +24,14 @@ const copy = {
     pendingRecommendations: '待处理建议',
     pendingImpact: '等待验证',
     verifiedImpact: '已验证效果',
-    searchPlaceholder: '探索运行 / 事件 / 建议',
+    searchPlaceholder: '搜索运行 ID / Agent / 建议',
+    dataSource: '数据源',
+    helpDocs: '帮助文档',
+    chooseDataSource: '切换数据源',
+    availableDataSources: '可用数据源',
+    dataSourceEmptyTitle: '当前数据库没有运行数据',
+    dataSourceEmptyBody: '这个页面正在读取 {dbPath}。如果你想看之前的 E2E 结果，请切换到有 session 的 .db；如果想生成示例数据，可以运行下面的命令。',
+    demoDataCommand: 'node src/cli.js demo --db .runq/runq.db',
     eyebrowOverview: 'System Overview',
     eyebrowSessions: 'Run Telemetry',
     eyebrowAdvisor: 'Recommendation Queue',
@@ -51,7 +58,7 @@ const copy = {
     docsStartConsole: '启动控制台',
     docsStartConsoleBody: '开发 UI 时运行 Next.js 服务；查看指定数据库时运行 Run Inbox。',
     docsConnectAgents: '连接 Agent',
-    docsConnectAgentsBody: '自动配置 Claude Code、Codex、OpenClaw 和 Hermes 的本地采集入口。',
+    docsConnectAgentsBody: '自动配置 Claude Code、Codex hooks、OpenClaw 和 Hermes 的本地采集入口。',
     docsInspectRuns: '查看运行',
     docsInspectRunsBody: '从 Agents 进入具体 Agent，再打开 Sessions 或 Traces 查看运行证据。',
     docsImproveWorkflow: '改进工作流',
@@ -62,9 +69,23 @@ const copy = {
     tracesModuleBody: '把模型、命令、文件、测试、反馈展开成证据时间线，用来解释每次结果。',
     evaluationsModuleBody: '用真实任务集评估 agent 表现，形成满意度、通过率和回归趋势。',
     recommendationsModuleBody: '把观测到的问题转成可采纳的优化建议，并追踪采纳后的效果。',
-    setupModuleBody: '每个 agent 都有安装、hook、上报、隐私和健康检查状态。',
+    setupModuleBody: '选择要接入的 agent，配置本地 hook、上报、隐私和健康检查。',
+    setupWizardTitle: '接入 Agent',
+    setupWizardBody: '选择一个 agent 类型，复制命令或让 agent 读取接入说明，完成后检查连接状态。',
+    setupChooseAgent: '选择 Agent 类型',
+    setupSteps: '操作步骤',
+    setupSuccess: '接入成功提醒',
+    commandLineSetup: '命令行接入',
+    agentSelfSetup: 'Agent 自接入',
+    agentSelfSetupBody: '让当前 agent 读取这段 SKILL.md 说明，并按步骤执行接入命令。',
+    checkConnection: '检查连接',
+    connectedNotice: '已接入。后续运行会自动进入 RunQ。',
+    pendingNotice: '完成步骤后点击检查连接；成功后这里会显示 Connected。',
     agentOverview: 'Agent 总览',
     agentFleet: 'Agent 队列',
+    capabilityOverview: '能力总览',
+    capabilityOverviewBody: '这里是 Agent 画像，汇总该 Agent 在当前数据源中的模型、命令、验证、文件和建议能力，不代表单次 trace。',
+    fileChanges: '文件变更',
     agentDetail: 'Agent 观测详情',
     selectAgent: '选择一个 Agent 查看它的运行质量、历史与建议。',
     connected: 'Connected',
@@ -73,17 +94,21 @@ const copy = {
     supportedAgents: '支持 Agent',
     lastSeen: '最后活动',
     totalRuns: 'Total Runs',
-    confidence: 'Confidence',
+    confidence: 'Trust Score',
+    trustScore: 'RunQ 信任分',
+    trustModel: 'Trust Model',
+    outcomeEvidence: 'Outcome 证据',
     failureRate: 'Failure Rate',
     runs: '运行',
     runCount: '运行总数',
-    avgConfidence: '平均置信度',
+    avgConfidence: '平均信任分',
     recommendations: '优化建议',
     failed: '失败',
     accepted: '已接受',
     needsReview: '需复核',
     allRuns: '全部运行',
     activity: '活动量',
+    modelCalls: '模型调用',
     commandCount: '命令数',
     verificationCount: '验证数',
     realData: '本地事件库',
@@ -91,7 +116,7 @@ const copy = {
     tokenConsumption: 'Token 消耗与成本趋势',
     inputTokens: 'Input',
     outputTokens: 'Output',
-    confidenceTrend: '可靠性趋势',
+    confidenceTrend: '信任分趋势',
     activityTrend: '命令 / 验证活动',
     runInbox: '运行收件箱',
     searchRuns: '搜索运行',
@@ -104,6 +129,8 @@ const copy = {
     noRunMatch: '没有运行匹配当前过滤条件。',
     noEvents: '没有事件匹配当前过滤条件。',
     noRecommendations: '这个运行暂时没有证据支持的优化建议。',
+    noAgentRunsTitle: '等待首次运行',
+    noAgentRunsBody: '已接入；当前数据库还没有采集到运行。完成一次 agent 任务后这里会显示质量指标。',
     selectRun: '选择一个运行查看时间线和质量信号。',
     satisfaction: '满意度',
     details: '详情',
@@ -113,12 +140,15 @@ const copy = {
     noSignal: '尚未记录人工或评估器判断。',
     setupUnavailable: '接入检查暂不可用。',
     fix: '修复',
+    connectAction: '接入',
+    configureAction: '配置',
     copied: '已复制',
     copyFailed: '复制失败',
     healthy: 'Ready',
     check: 'Check',
     scoreReasons: '评分证据',
     evidenceEvents: '证据事件',
+    viewEvidence: '查看证据',
     likelyCompleted: 'Likely completed',
     needsReviewVerdict: 'Needs review',
     insufficientEvidence: 'Insufficient evidence',
@@ -163,7 +193,7 @@ const copy = {
     computeLoad: 'Verification',
     last24h: '近 24 小时',
     last7d: '近 7 天',
-    deployNew: '新建 Agent',
+    deployNew: '接入 Agent',
     filterSort: '筛选排序',
     descClaudeCode: '本地 Claude Code 终端编码',
     descCodex: 'Codex 命令行编码代理',
@@ -182,7 +212,14 @@ const copy = {
     pendingRecommendations: 'Pending recommendations',
     pendingImpact: 'Awaiting validation',
     verifiedImpact: 'Verified impact',
-    searchPlaceholder: 'Explore runs, events, recommendations',
+    searchPlaceholder: 'Search run ID, agent, or recommendation',
+    dataSource: 'Data source',
+    helpDocs: 'Help docs',
+    chooseDataSource: 'Switch data source',
+    availableDataSources: 'Available data sources',
+    dataSourceEmptyTitle: 'Current database has no run data',
+    dataSourceEmptyBody: 'This page is reading {dbPath}. Switch to a .db with sessions to inspect previous E2E results, or generate demo data with the command below.',
+    demoDataCommand: 'node src/cli.js demo --db .runq/runq.db',
     eyebrowOverview: 'System Overview',
     eyebrowSessions: 'Run Telemetry',
     eyebrowAdvisor: 'Recommendation Queue',
@@ -209,7 +246,7 @@ const copy = {
     docsStartConsole: 'Start the console',
     docsStartConsoleBody: 'Run the Next.js server while developing UI, or Run Inbox against a specific database.',
     docsConnectAgents: 'Connect agents',
-    docsConnectAgentsBody: 'Configure local collection for Claude Code, Codex, OpenClaw, and Hermes.',
+    docsConnectAgentsBody: 'Configure local collection for Claude Code, Codex hooks, OpenClaw, and Hermes.',
     docsInspectRuns: 'Inspect runs',
     docsInspectRunsBody: 'Start from Agents, open an agent, then use Sessions or Traces to inspect evidence.',
     docsImproveWorkflow: 'Improve workflows',
@@ -220,9 +257,23 @@ const copy = {
     tracesModuleBody: 'Model calls, commands, files, tests, and feedback expand into an evidence timeline.',
     evaluationsModuleBody: 'Evaluate agents against real task suites and track satisfaction, pass rate, and regressions.',
     recommendationsModuleBody: 'Convert observed issues into actionable recommendations and track their impact.',
-    setupModuleBody: 'Each agent has install, hook, reporting, privacy, and health-check status.',
+    setupModuleBody: 'Choose an agent integration and configure local hooks, reporting, privacy, and health checks.',
+    setupWizardTitle: 'Connect Agent',
+    setupWizardBody: 'Choose an agent type, copy a command or hand the setup instructions to the agent, then check connection status.',
+    setupChooseAgent: 'Choose Agent Type',
+    setupSteps: 'Setup Steps',
+    setupSuccess: 'Connection Success',
+    commandLineSetup: 'Command-line setup',
+    agentSelfSetup: 'Agent self-setup',
+    agentSelfSetupBody: 'Ask the current agent to read this SKILL.md instruction and run the setup command.',
+    checkConnection: 'Check Connection',
+    connectedNotice: 'Connected. Future runs will be captured by RunQ.',
+    pendingNotice: 'Run the setup steps, then check the connection. Connected agents will show Ready here.',
     agentOverview: 'Agent Overview',
     agentFleet: 'Agent Fleet',
+    capabilityOverview: 'Capability Overview',
+    capabilityOverviewBody: 'This is the agent profile across the current data source: model, command, verification, file, and recommendation capability. It is not a single trace.',
+    fileChanges: 'File changes',
     agentDetail: 'Agent Observability Detail',
     selectAgent: 'Select an agent to inspect quality, history, and recommendations.',
     connected: 'Connected',
@@ -231,17 +282,21 @@ const copy = {
     supportedAgents: 'Supported Agents',
     lastSeen: 'Last seen',
     totalRuns: 'Total Runs',
-    confidence: 'Confidence',
+    confidence: 'Trust Score',
+    trustScore: 'RunQ Trust Score',
+    trustModel: 'Trust Model',
+    outcomeEvidence: 'Outcome evidence',
     failureRate: 'Failure Rate',
     runs: 'runs',
     runCount: 'Total runs',
-    avgConfidence: 'Avg confidence',
+    avgConfidence: 'Avg trust score',
     recommendations: 'Recommendations',
     failed: 'failed',
     accepted: 'Accepted',
     needsReview: 'Needs review',
     allRuns: 'All runs',
     activity: 'Activity',
+    modelCalls: 'Model calls',
     commandCount: 'Commands',
     verificationCount: 'Verifications',
     realData: 'From local event store',
@@ -249,7 +304,7 @@ const copy = {
     tokenConsumption: 'Token consumption & cost trend',
     inputTokens: 'Input',
     outputTokens: 'Output',
-    confidenceTrend: 'Confidence trend',
+    confidenceTrend: 'Trust score trend',
     activityTrend: 'Command / verification activity',
     runInbox: 'Run Inbox',
     searchRuns: 'Search runs',
@@ -262,6 +317,8 @@ const copy = {
     noRunMatch: 'No runs match the current filters.',
     noEvents: 'No events match the current filters.',
     noRecommendations: 'No evidence-backed workflow recommendation for this run yet.',
+    noAgentRunsTitle: 'Waiting for first run',
+    noAgentRunsBody: 'Connected, but this database has not captured a run yet. Run one agent task and quality metrics will appear here.',
     selectRun: 'Select a run to inspect timeline and quality signals.',
     satisfaction: 'Satisfaction',
     details: 'Details',
@@ -271,12 +328,15 @@ const copy = {
     noSignal: 'No human or evaluator judgment recorded yet.',
     setupUnavailable: 'Setup checks are not available yet.',
     fix: 'Fix',
+    connectAction: 'Connect',
+    configureAction: 'Configure',
     copied: 'Copied',
     copyFailed: 'Copy failed',
     healthy: 'Ready',
     check: 'Check',
     scoreReasons: 'Score evidence',
     evidenceEvents: 'evidence events',
+    viewEvidence: 'View evidence',
     likelyCompleted: 'Likely completed',
     needsReviewVerdict: 'Needs review',
     insufficientEvidence: 'Insufficient evidence',
@@ -321,7 +381,7 @@ const copy = {
     computeLoad: 'Verifications',
     last24h: 'Last 24h',
     last7d: 'Last 7d',
-    deployNew: 'Deploy Agent',
+    deployNew: 'Connect Agent',
     filterSort: 'Filter & Sort',
     descClaudeCode: 'Claude Code terminal coding agent',
     descCodex: 'OpenAI Codex code automation',
@@ -331,11 +391,14 @@ const copy = {
 };
 
 const knownAgents = [
-  ['claude_code', 'Claude Code', 'Anthropic', 'terminal', 'from-primary to-secondary-container'],
-  ['codex', 'Codex', 'OpenAI', 'code', 'from-tertiary-container to-tertiary'],
-  ['openclaw', 'OpenClaw', 'OSS', 'security', 'from-slate-700 to-slate-900'],
-  ['hermes', 'Hermes', 'Nous', 'auto_awesome', 'from-fuchsia-500 to-pink-600']
+  ['claude_code', 'Claude Code', 'Anthropic', 'claude', 'from-[#D97757] to-[#8B4A2F]'],
+  ['codex', 'Codex', 'OpenAI', 'openai', 'from-[#111827] to-[#0B0F19]'],
+  ['openclaw', 'OpenClaw', 'OSS', 'openclaw', 'from-slate-700 to-slate-900'],
+  ['hermes', 'Hermes', 'Nous', 'hermes', 'from-fuchsia-500 to-pink-600']
 ];
+
+const SESSION_AUTO_REFRESH_MS = 10000;
+const EVENT_AUTO_REFRESH_MS = 3000;
 
 const sidebarItems = [
   { href: '/agents', viewKey: 'agents', icon: 'dashboard' },
@@ -348,6 +411,18 @@ const sidebarItems = [
 function normalizeLang(lang) { return lang === 'en' ? 'en' : 'zh'; }
 function getStoredLang() { if (typeof window === 'undefined') return null; return window.localStorage.getItem('runq.lang'); }
 function setStoredLang(lang) { if (typeof window !== 'undefined') window.localStorage.setItem('runq.lang', lang); }
+function apiDbQuery(dbPath) { return dbPath ? `?db=${encodeURIComponent(dbPath)}` : ''; }
+function appendDbParam(href, dbPath) {
+  if (!dbPath || href.startsWith('http') || href.startsWith('#')) return href;
+  const joiner = href.includes('?') ? '&' : '?';
+  return `${href}${joiner}db=${encodeURIComponent(dbPath)}`;
+}
+function switchDataSource(dbPath) {
+  if (typeof window === 'undefined' || !dbPath) return;
+  const next = new URL(window.location.href);
+  next.searchParams.set('db', dbPath);
+  window.location.href = next.toString();
+}
 
 function MaterialIcon({ name, className = '', filled = false, style }) {
   return h('span', {
@@ -356,6 +431,97 @@ function MaterialIcon({ name, className = '', filled = false, style }) {
     'data-icon': name,
     style
   }, name);
+}
+
+function RunqLogo({ className = 'h-10 w-10' }) {
+  return h('svg', {
+    'aria-hidden': 'true',
+    className,
+    'data-logo': 'runq',
+    viewBox: '0 0 128 128'
+  }, [
+    h('defs', null, [
+      h('linearGradient', { id: 'runq-mark-bg', gradientUnits: 'userSpaceOnUse', x1: '16', x2: '116', y1: '12', y2: '118' }, [
+        h('stop', { stopColor: '#111827' }),
+        h('stop', { offset: '1', stopColor: '#0050CB' })
+      ]),
+      h('linearGradient', { id: 'runq-mark-orbit', gradientUnits: 'userSpaceOnUse', x1: '26', x2: '102', y1: '30', y2: '100' }, [
+        h('stop', { stopColor: '#00EEFC' }),
+        h('stop', { offset: '1', stopColor: '#0066FF' })
+      ])
+    ]),
+    h('rect', { fill: 'url(#runq-mark-bg)', height: '128', rx: '28', width: '128' }),
+    h('path', { d: 'M30 66c0-21.5 15.7-38 37-38 17.6 0 30.8 11.4 34.4 27.7', fill: 'none', stroke: 'url(#runq-mark-orbit)', strokeLinecap: 'round', strokeWidth: '10' }),
+    h('path', { d: 'M98 65c0 21.5-15.7 38-37 38-18 0-31.5-11.9-34.7-28.7', fill: 'none', stroke: '#F8FAFC', strokeLinecap: 'round', strokeWidth: '10' }),
+    h('path', { d: 'M75 87l18 18', stroke: '#F8FAFC', strokeLinecap: 'round', strokeWidth: '10' }),
+    h('circle', { cx: '67', cy: '66', fill: '#F8FAFC', r: '16' }),
+    h('circle', { cx: '67', cy: '66', fill: '#0050CB', r: '7' }),
+    h('circle', { cx: '101', cy: '54', fill: '#22C55E', r: '8' }),
+    h('path', { d: 'M97.5 54.2l2.4 2.5 5.1-6', fill: 'none', stroke: '#F8FAFC', strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: '2.8' })
+  ]);
+}
+
+function AgentLogo({ logo, className = 'h-6 w-6' }) {
+  const common = {
+    'aria-hidden': 'true',
+    className,
+    'data-logo': logo
+  };
+  if (logo === 'openai') {
+    return h('svg', { ...common, fill: 'none', viewBox: '0 0 64 64' }, [
+      h('path', {
+        d: 'M32 9.5c5.1-5.6 14.5-2.7 15.7 4.8 7.5 1.2 10.4 10.6 4.8 15.7 5.6 5.1 2.7 14.5-4.8 15.7-1.2 7.5-10.6 10.4-15.7 4.8-5.1 5.6-14.5 2.7-15.7-4.8-7.5-1.2-10.4-10.6-4.8-15.7-5.6-5.1-2.7-14.5 4.8-15.7C17.5 6.8 26.9 3.9 32 9.5Z',
+        stroke: 'currentColor',
+        strokeLinejoin: 'round',
+        strokeWidth: '5'
+      }),
+      h('path', {
+        d: 'M20.5 23.5 32 17l11.5 6.5v13L32 43l-11.5-6.5v-13Z',
+        stroke: 'currentColor',
+        strokeLinejoin: 'round',
+        strokeWidth: '4'
+      })
+    ]);
+  }
+  if (logo === 'claude') {
+    return h('span', { ...common, className: `${className} grid place-items-center font-serif text-[28px] leading-none` }, '✶');
+  }
+  if (logo === 'openclaw') {
+    return h('svg', { ...common, fill: 'none', viewBox: '0 0 120 120' }, [
+      h('path', {
+        d: 'M60 10 C30 10 15 35 15 55 C15 75 30 95 45 100 L45 110 L55 110 L55 100 C55 100 60 102 65 100 L65 110 L75 110 L75 100 C90 95 105 75 105 55 C105 35 90 10 60 10Z',
+        fill: 'currentColor'
+      }),
+      h('path', {
+        d: 'M20 45 C5 40 0 50 5 60 C10 70 20 65 25 55 C28 48 25 45 20 45Z',
+        fill: 'currentColor'
+      }),
+      h('path', {
+        d: 'M100 45 C115 40 120 50 115 60 C110 70 100 65 95 55 C92 48 95 45 100 45Z',
+        fill: 'currentColor'
+      }),
+      h('path', {
+        d: 'M45 15 Q35 5 30 8',
+        stroke: 'currentColor',
+        strokeLinecap: 'round',
+        strokeWidth: '5'
+      }),
+      h('path', {
+        d: 'M75 15 Q85 5 90 8',
+        stroke: 'currentColor',
+        strokeLinecap: 'round',
+        strokeWidth: '5'
+      }),
+      h('circle', { cx: '45', cy: '35', fill: '#050810', r: '6' }),
+      h('circle', { cx: '75', cy: '35', fill: '#050810', r: '6' }),
+      h('circle', { cx: '46', cy: '34', fill: '#00e5cc', r: '2' }),
+      h('circle', { cx: '76', cy: '34', fill: '#00e5cc', r: '2' })
+    ]);
+  }
+  if (logo === 'hermes') {
+    return h('span', { ...common, className: `${className} grid place-items-center font-serif text-[26px] leading-none` }, '☤');
+  }
+  return h(MaterialIcon, { className, name: 'smart_toy' });
 }
 
 function chip(label, tone = 'neutral', key) {
@@ -384,9 +550,9 @@ function statusPill(connected, t) {
 
 function runMatchesFilter(session, filter) {
   const sat = session.satisfaction?.label;
-  const conf = session.quality?.outcome_confidence ?? 0;
-  if (filter === 'needs_review') return conf < 0.7 || sat === 'needs_review' || sat === 'abandoned';
-  if (filter === 'accepted') return sat === 'accepted' || conf >= 0.85;
+  const trust = trustScoreValue(session.quality) / 100;
+  if (filter === 'needs_review') return trust < 0.7 || sat === 'needs_review' || sat === 'abandoned';
+  if (filter === 'accepted') return sat === 'accepted' || trust >= 0.85;
   if (filter === 'failed') return sat === 'abandoned' || (session.quality?.reasons || []).some((r) => r.includes('failed'));
   return true;
 }
@@ -411,7 +577,7 @@ function eventMatchesSearch(event, query) {
 function calcStats(sessions) {
   const total = sessions.length;
   const failed = sessions.filter((s) => runMatchesFilter(s, 'failed')).length;
-  const avgConfidence = total ? sessions.reduce((sum, s) => sum + Number(s.quality?.outcome_confidence || 0), 0) / total : 0;
+  const avgConfidence = total ? sessions.reduce((sum, s) => sum + trustScoreValue(s.quality), 0) / total / 100 : 0;
   const recommendationCount = sessions.reduce((sum, s) => sum + (s.recommendations || []).length, 0);
   const telemetry = sessions.reduce((acc, s) => {
     const t = s.telemetry || {};
@@ -432,17 +598,56 @@ function agentMeta(agentId) {
   return knownAgents.find(([id]) => id === agentId) || [agentId, agentId, 'Custom', 'auto_awesome', 'from-slate-500 to-slate-700'];
 }
 
+function knownAgentIdForSetupCheck(check) {
+  if (check?.agent_id) return check.agent_id;
+  const normalizedLabel = check?.label?.toLowerCase();
+  return knownAgents.find(([, label]) => label.toLowerCase() === normalizedLabel)?.[0] ?? null;
+}
+
+function setupCheckForAgent(setupHealth, agentId) {
+  return (setupHealth?.checks || []).find((check) => knownAgentIdForSetupCheck(check) === agentId) ?? null;
+}
+
+function defaultSetupCommand(agentId) {
+  const target = agentId === 'claude_code' ? 'claude-code' : agentId;
+  return `node src/cli.js init ${target} --db .runq/runq.db`;
+}
+
+function setupCommandForAgent(setupHealth, agentId) {
+  const check = setupCheckForAgent(setupHealth, agentId);
+  return check?.remediation && !check.remediation.startsWith('No action')
+    ? check.remediation
+    : defaultSetupCommand(agentId);
+}
+
+function setupSkillForAgent(agent, command) {
+  return [
+    '# RunQ Agent Setup',
+    '',
+    `You are setting up ${agent[1]} for RunQ local run-quality capture.`,
+    `Run this command from the RunQ repo root: ${command}`,
+    'Then run: node src/cli.js doctor --db .runq/runq.db',
+    'If the agent status is not ok, report the exact doctor output.'
+  ].join('\n');
+}
+
 function deriveAgents(sessions, setupHealth) {
-  const ids = new Set([...knownAgents.map(([id]) => id), ...sessions.map((s) => s.framework).filter(Boolean)]);
-  const setupByLabel = new Map((setupHealth?.checks || []).map((c) => [c.label.toLowerCase(), c]));
+  const agentChecks = (setupHealth?.checks || [])
+    .map((check) => ({ check, agentId: knownAgentIdForSetupCheck(check) }))
+    .filter(({ agentId }) => agentId);
+  const connectedSetupIds = agentChecks
+    .filter(({ check }) => check.status === 'ok')
+    .map(({ agentId }) => agentId);
+  const ids = new Set([...sessions.map((s) => s.framework).filter(Boolean), ...connectedSetupIds]);
+  const setupByAgentId = new Map(agentChecks.map(({ check, agentId }) => [agentId, check]));
   return Array.from(ids).map((id) => {
-    const [, displayName, brand, icon, gradient] = agentMeta(id);
+    const [, displayName, brand, logo, gradient] = agentMeta(id);
     const agentSessions = sessions.filter((s) => s.framework === id);
     const stats = calcStats(agentSessions);
-    const setup = setupByLabel.get(displayName.toLowerCase());
+    const setup = setupByAgentId.get(id);
     const connected = setup?.status === 'ok' || agentSessions.length > 0;
     return {
-      agent_id: id, display_name: displayName, brand, icon, gradient,
+      agent_id: id, display_name: displayName, brand, logo, gradient,
       sessions: agentSessions, stats, setup, connected,
       last_seen: agentSessions[0]?.last_event_at || setup?.summary || null,
       recommendation_count: agentSessions.reduce((sum, s) => sum + (s.recommendations || []).length, 0)
@@ -461,13 +666,13 @@ function groupRunsForChart(sessions) {
     output: Number(session.telemetry?.output_tokens || 0),
     commands: Number(session.telemetry?.command_count || 0),
     verifications: Number(session.telemetry?.verification_count || 0),
-    confidence: Number(session.quality?.outcome_confidence || 0),
+    confidence: trustScoreValue(session.quality) / 100,
     activity: Number(session.telemetry?.command_count || 0) + Number(session.telemetry?.verification_count || 0)
   }));
 }
 
 function verdictFor(session, t) {
-  const score = Number(session?.quality?.outcome_confidence || 0);
+  const score = trustScoreValue(session?.quality) / 100;
   const hasSat = Boolean(session?.satisfaction?.label);
   if (score >= 0.8) return { label: t.likelyCompleted, tone: 'good' };
   if (score >= 0.5) return { label: t.needsReviewVerdict, tone: 'warn' };
@@ -489,22 +694,23 @@ function statusDot(tone) {
 
 /* ---------------- Shell ---------------- */
 
-function Sidebar({ activeView, t }) {
+function Sidebar({ activeView, dbPath, t }) {
   return h('nav', {
     className: 'fixed left-0 top-0 z-50 hidden h-screen w-20 flex-col items-center border-r border-white/20 bg-white/80 py-8 shadow-2xl shadow-blue-500/5 backdrop-blur-xl sm:flex'
   }, [
     h('a', {
-      className: 'mb-12 text-xl font-black tracking-tighter text-primary-container hover:scale-105 transition-transform duration-200',
-      href: '/agents',
+      'aria-label': 'RunQ Agents',
+      className: 'mb-12 rounded-2xl hover:scale-105 transition-transform duration-200',
+      href: appendDbParam('/agents', dbPath),
       key: 'logo'
-    }, 'R'),
+    }, h(RunqLogo, { className: 'h-11 w-11' })),
     h('div', { className: 'flex flex-1 flex-col gap-8', key: 'nav-items' }, sidebarItems.map((item) => {
       const active = item.viewKey === activeView;
       return h('a', {
         className: active
           ? 'rounded-xl bg-primary/10 p-3 text-primary-container shadow-[0_0_15px_rgba(0,102,255,0.3)] hover:scale-105 transition-transform cursor-pointer'
           : 'p-3 text-slate-400 hover:text-slate-600 hover:scale-105 transition-all cursor-pointer text-center',
-        href: item.href,
+        href: appendDbParam(item.href, dbPath),
         key: item.viewKey
       }, [
         h(MaterialIcon, { className: 'text-[22px]', filled: active, name: item.icon, key: 'icon' }),
@@ -514,7 +720,7 @@ function Sidebar({ activeView, t }) {
     h('div', { className: 'mt-auto flex flex-col items-center gap-6', key: 'footer' }, [
       h('a', {
         className: 'p-3 text-slate-400 hover:text-slate-600 hover:scale-105 transition-all cursor-pointer',
-        href: '/evaluations',
+        href: appendDbParam('/evaluations', dbPath),
         key: 'evals'
       }, [
         h(MaterialIcon, { className: 'text-[22px]', name: 'grading', key: 'i' }),
@@ -524,7 +730,7 @@ function Sidebar({ activeView, t }) {
         className: activeView === 'docs'
           ? 'rounded-xl bg-primary/10 p-3 text-primary-container shadow-[0_0_15px_rgba(0,102,255,0.3)] hover:scale-105 transition-transform cursor-pointer'
           : 'p-3 text-slate-400 hover:text-slate-600 hover:scale-105 transition-all cursor-pointer',
-        href: '/docs',
+        href: appendDbParam('/docs', dbPath),
         key: 'docs'
       }, [
         h(MaterialIcon, { className: 'text-[22px]', filled: activeView === 'docs', name: 'menu_book', key: 'i' }),
@@ -535,7 +741,7 @@ function Sidebar({ activeView, t }) {
   ]);
 }
 
-function MobileNav({ activeView, t }) {
+function MobileNav({ activeView, dbPath, t }) {
   const items = [
     ...sidebarItems,
     { href: '/evaluations', viewKey: 'evaluations', icon: 'grading' },
@@ -549,7 +755,7 @@ function MobileNav({ activeView, t }) {
       className: active
         ? 'grid h-11 w-11 place-items-center rounded-xl bg-primary/10 text-primary-container'
         : 'grid h-11 w-11 place-items-center rounded-xl text-slate-500 hover:bg-slate-100',
-      href: item.href,
+      href: appendDbParam(item.href, dbPath),
       key: item.viewKey
     }, [
       h(MaterialIcon, { className: 'text-[21px]', filled: active, name: item.icon, key: 'icon' }),
@@ -558,7 +764,7 @@ function MobileNav({ activeView, t }) {
   }));
 }
 
-function TopBar({ t, lang, setLang, onRefresh, activeView, selectedAgent, notificationCount = 0, notificationHref = '/recommendations', searchQuery = '' }) {
+function TopBar({ t, lang, setLang, onRefresh, activeView, selectedAgent, notificationCount = 0, notificationHref = '/recommendations', searchQuery = '', dbPath = '', dataSources = [] }) {
   const moduleLabel = {
     agents: t.navAgents,
     sessions: t.navSessions,
@@ -576,11 +782,19 @@ function TopBar({ t, lang, setLang, onRefresh, activeView, selectedAgent, notifi
   }, [
     h('div', { className: 'flex flex-col gap-0.5', key: 'left' }, [
       h('h1', { className: 'font-sans text-sm font-semibold uppercase tracking-widest text-primary' }, `${t.productName} Console`),
-      h('p', { className: 'text-xs font-medium text-slate-500' }, contextLabel)
+      h('p', { className: 'flex flex-wrap items-center gap-2 text-xs font-medium text-slate-500' }, [
+        h('span', { key: 'context' }, contextLabel),
+        dbPath ? h('span', {
+          className: 'hidden max-w-[280px] truncate rounded-full bg-surface-container-low px-2 py-0.5 font-mono text-[10px] text-slate-500 lg:inline-block',
+          key: 'db',
+          title: `${t.dataSource}: ${dbPath}`
+        }, dbPath) : null
+      ])
     ]),
     h('div', { className: 'flex min-w-0 flex-1 items-center justify-end gap-2 sm:gap-4', key: 'right' }, [
       h('form', { action: '/sessions', className: 'relative hidden min-w-0 sm:block', key: 'search', method: 'get' }, [
         h(MaterialIcon, { className: 'absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 scale-75', name: 'search' }),
+        dbPath ? h('input', { name: 'db', type: 'hidden', value: dbPath }) : null,
         h('input', {
           defaultValue: searchQuery,
           className: 'w-64 rounded-full border-none bg-surface-container-low py-1.5 pl-10 pr-4 text-xs transition-all focus:ring-2 focus:ring-primary',
@@ -589,6 +803,18 @@ function TopBar({ t, lang, setLang, onRefresh, activeView, selectedAgent, notifi
           type: 'search'
         })
       ]),
+      dataSources.length > 0 ? h('label', { className: 'relative hidden min-w-[180px] lg:block', key: 'datasource', title: `${t.dataSource}: ${dbPath}` }, [
+        h('span', { className: 'sr-only' }, t.chooseDataSource),
+        h('select', {
+          'aria-label': t.chooseDataSource,
+          className: 'w-full appearance-none rounded-full border-none bg-surface-container-low py-1.5 pl-3 pr-8 text-xs font-medium text-slate-600 outline-none transition-all focus:ring-2 focus:ring-primary',
+          onChange: (event) => switchDataSource(event.target.value),
+          value: dbPath
+        }, dataSources.map((source) =>
+          h('option', { key: source.path, value: source.path }, `${source.label} · ${source.session_count}`)
+        )),
+        h(MaterialIcon, { className: 'pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[16px] text-slate-400', name: 'database' })
+      ]) : null,
       h('div', { className: 'flex gap-2', key: 'actions' }, [
         h('button', {
           className: 'p-2 text-slate-500 hover:bg-slate-100/50 rounded-lg transition-all',
@@ -634,7 +860,49 @@ function PageHeader({ eyebrow, title, subtitle, actions }) {
 
 /* ---------------- Agent Cards ---------------- */
 
-function AgentCard({ agent, t, accent, description }) {
+function AgentCardActions({ agent, onOpenSetupWizard, t }) {
+  const actionClass = 'grid h-10 w-10 place-items-center rounded-xl border border-outline-variant/30 bg-white/70 text-primary shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-primary/30';
+  return h('div', { className: 'flex items-center gap-2 pt-1' }, [
+    h('a', {
+      'aria-label': `${agent.display_name} ${t.details}`,
+      'data-action': 'open-agent-detail',
+      'data-agent-id': agent.agent_id,
+      className: actionClass,
+      href: `/agents/${encodeURIComponent(agent.agent_id)}/sessions`,
+      title: t.details
+    }, h(MaterialIcon, { className: 'text-[20px]', name: 'arrow_forward' })),
+    h('a', {
+      'aria-label': `${agent.display_name} ${t.recommendations}`,
+      'data-action': 'open-agent-recommendations',
+      'data-agent-id': agent.agent_id,
+      className: actionClass,
+      href: `/agents/${encodeURIComponent(agent.agent_id)}/recommendations`,
+      title: t.recommendations
+    }, h(MaterialIcon, { className: 'text-[20px]', name: 'monitoring' })),
+    h('a', {
+      'aria-label': `${agent.display_name} ${t.navEvaluations}`,
+      'data-action': 'open-agent-evaluations',
+      'data-agent-id': agent.agent_id,
+      className: actionClass,
+      href: `/agents/${encodeURIComponent(agent.agent_id)}/evaluations`,
+      title: t.navEvaluations
+    }, h(MaterialIcon, { className: 'text-[20px]', name: 'grading' })),
+    h('a', {
+      'aria-label': `${agent.display_name} ${t.navSetup}`,
+      'data-action': 'open-agent-setup-wizard',
+      'data-agent-id': agent.agent_id,
+      className: actionClass,
+      href: `/agents/${encodeURIComponent(agent.agent_id)}/setup`,
+      onClick: (event) => {
+        event.preventDefault();
+        onOpenSetupWizard?.(agent.agent_id);
+      },
+      title: t.navSetup
+    }, h(MaterialIcon, { className: 'text-[20px]', name: 'settings' }))
+  ]);
+}
+
+function AgentCard({ agent, t, accent, description, onOpenSetupWizard }) {
   const stats = agent.stats;
   const failureRate = stats.total ? stats.failed / stats.total : 0;
   const confidencePct = Math.round(stats.avgConfidence * 100);
@@ -646,7 +914,7 @@ function AgentCard({ agent, t, accent, description }) {
   }, [
     h('div', { className: 'flex justify-between items-start' }, [
       h('div', { className: `w-12 h-12 rounded-2xl bg-gradient-to-br ${agent.gradient} flex items-center justify-center text-white` },
-        h(MaterialIcon, { className: 'text-2xl', name: agent.icon })
+        h(AgentLogo, { className: 'h-7 w-7 text-white', logo: agent.logo })
       ),
       h('div', { className: `flex items-center gap-2 px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${agent.connected ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-600'}` }, [
         h('span', { className: `w-1.5 h-1.5 rounded-full status-glow ${agent.connected ? 'bg-green-500 animate-pulse' : 'bg-amber-500'}` }),
@@ -657,7 +925,19 @@ function AgentCard({ agent, t, accent, description }) {
       h('h3', { className: 'font-h3 text-lg' }, agent.display_name),
       h('p', { className: 'text-slate-500 text-xs mt-1' }, description)
     ]),
-    agent.connected
+    agent.connected && stats.total === 0
+      ? h('div', { className: 'space-y-4' }, [
+          h('div', { className: 'flex justify-between items-end' }, [
+            h('span', { className: 'text-slate-400 text-xs uppercase font-bold tracking-tighter' }, t.totalRuns),
+            h('span', { className: 'font-mono text-sm font-semibold' }, '0')
+          ]),
+          h('div', { className: 'rounded-2xl border border-dashed border-outline-variant/50 bg-white/60 p-3' }, [
+            h('p', { className: 'text-xs font-semibold text-on-surface' }, t.noAgentRunsTitle),
+            h('p', { className: 'mt-1 text-xs leading-5 text-on-surface-variant' }, t.noAgentRunsBody)
+          ]),
+          h(AgentCardActions, { agent, onOpenSetupWizard, t })
+        ])
+      : agent.connected
       ? h('div', { className: 'space-y-4' }, [
           h('div', { className: 'flex justify-between items-end' }, [
             h('span', { className: 'text-slate-400 text-xs uppercase font-bold tracking-tighter' }, t.totalRuns),
@@ -679,32 +959,7 @@ function AgentCard({ agent, t, accent, description }) {
             h('span', { className: 'text-slate-400' }, t.failureRate),
             h('span', { className: failureRate > 0.1 ? 'text-error font-semibold' : 'text-green-600 font-semibold' }, `${(failureRate * 100).toFixed(2)}%`)
           ]),
-          h('div', { className: 'flex flex-wrap gap-3 pt-1' }, [
-            h('a', {
-              'data-action': 'open-agent-detail',
-              'data-agent-id': agent.agent_id,
-              className: 'inline-flex items-center gap-1 text-xs text-primary hover:underline',
-              href: `/agents/${encodeURIComponent(agent.agent_id)}/sessions`
-            }, [t.details, h(MaterialIcon, { className: 'text-[14px]', name: 'arrow_forward' })]),
-            h('a', {
-              'data-action': 'open-agent-recommendations',
-              'data-agent-id': agent.agent_id,
-              className: 'inline-flex items-center gap-1 text-xs text-primary hover:underline',
-              href: `/agents/${encodeURIComponent(agent.agent_id)}/recommendations`
-            }, [t.recommendations, h(MaterialIcon, { className: 'text-[14px]', name: 'monitoring' })]),
-            h('a', {
-              'data-action': 'open-agent-evaluations',
-              'data-agent-id': agent.agent_id,
-              className: 'inline-flex items-center gap-1 text-xs text-primary hover:underline',
-              href: `/agents/${encodeURIComponent(agent.agent_id)}/evaluations`
-            }, [t.navEvaluations, h(MaterialIcon, { className: 'text-[14px]', name: 'grading' })]),
-            h('a', {
-              'data-action': 'open-agent-setup',
-              'data-agent-id': agent.agent_id,
-              className: 'inline-flex items-center gap-1 text-xs text-primary hover:underline',
-              href: `/agents/${encodeURIComponent(agent.agent_id)}/setup`
-            }, [t.navSetup, h(MaterialIcon, { className: 'text-[14px]', name: 'settings' })])
-          ])
+          h(AgentCardActions, { agent, onOpenSetupWizard, t })
         ])
       : h('div', { className: 'space-y-4' }, [
           h('div', { className: 'flex justify-between items-end' }, [
@@ -721,29 +976,40 @@ function AgentCard({ agent, t, accent, description }) {
             )
           ]),
           h('a', {
+            'data-action': 'open-agent-setup-wizard',
+            'data-agent-id': agent.agent_id,
             className: 'block w-full py-2 bg-slate-50 text-primary font-label-caps text-[10px] rounded-lg hover:bg-primary hover:text-white transition-all text-center',
-            href: `/agents/${encodeURIComponent(agent.agent_id)}/setup`
+            href: `/agents/${encodeURIComponent(agent.agent_id)}/setup`,
+            onClick: (event) => {
+              event.preventDefault();
+              onOpenSetupWizard?.(agent.agent_id);
+            }
           }, t.needsSetup)
         ])
   ]);
 }
 
-function AddAgentCard({ t }) {
+function AddAgentCard({ onOpen, t }) {
   return h('a', {
+    'data-action': 'open-agent-setup-wizard',
     className: 'border-2 border-dashed border-slate-200 p-6 rounded-3xl flex flex-col items-center justify-center gap-4 group hover:border-primary/50 hover:bg-primary/5 transition-all cursor-pointer',
-    href: '/setup'
+    href: '/setup',
+    onClick: (event) => {
+      event.preventDefault();
+      onOpen?.();
+    }
   }, [
     h('div', { className: 'w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 group-hover:bg-primary group-hover:text-white transition-all' },
       h(MaterialIcon, { className: 'text-3xl', name: 'add_circle' })
     ),
     h('div', { className: 'text-center' }, [
       h('span', { className: 'font-label-caps text-label-caps block text-slate-400 group-hover:text-primary transition-all' }, t.deployNew),
-      h('span', { className: 'text-[10px] text-slate-300 block mt-1' }, t.realDataNote)
+      h('span', { className: 'text-[10px] text-slate-300 block mt-1' }, t.setupGuide)
     ])
   ]);
 }
 
-function AgentFleet({ agents, t }) {
+function AgentFleet({ agents, onOpenSetupWizard, t }) {
   const descriptions = {
     claude_code: t.descClaudeCode,
     codex: t.descCodex,
@@ -764,7 +1030,12 @@ function AgentFleet({ agents, t }) {
         }, [h(MaterialIcon, { className: 'text-base', name: 'tune' }), h('span', { className: 'font-label-caps text-label-caps' }, t.filterSort)]),
         h('a', {
           className: 'px-6 py-2 rounded-xl bg-primary text-white hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2 shadow-lg shadow-primary/20',
-          href: '/setup'
+          'data-action': 'open-agent-setup-wizard',
+          href: '/setup',
+          onClick: (event) => {
+            event.preventDefault();
+            onOpenSetupWizard?.();
+          }
         }, [h(MaterialIcon, { className: 'text-base', name: 'add' }), h('span', { className: 'font-label-caps text-label-caps' }, t.deployNew)])
       ])
     ]),
@@ -774,13 +1045,43 @@ function AgentFleet({ agents, t }) {
         agent,
         description: descriptions[agent.agent_id] || agent.brand,
         key: agent.agent_id,
+        onOpenSetupWizard,
         t
       })),
-      h(AddAgentCard, { key: 'add', t })
+      h(AddAgentCard, { key: 'add', onOpen: onOpenSetupWizard, t })
     ])
   ]);
 
   // (closure capture for descriptions language)
+}
+
+function DataSourceEmptyState({ dbPath, dataSources, t }) {
+  const alternatives = (dataSources || []).filter((source) => source.path !== dbPath && source.session_count > 0).slice(0, 3);
+  return h('section', { className: 'glass-card-strong rounded-3xl border border-amber-100/80 p-lg shadow-lg shadow-amber-500/5', id: 'empty-data-source' }, [
+    h('div', { className: 'flex flex-wrap items-start justify-between gap-4' }, [
+      h('div', { className: 'max-w-3xl' }, [
+        h('div', { className: 'mb-2 flex items-center gap-2 text-amber-700' }, [
+          h(MaterialIcon, { className: 'text-[20px]', name: 'database' }),
+          h('span', { className: 'font-label-caps text-label-caps uppercase' }, t.dataSource)
+        ]),
+        h('h3', { className: 'text-h3 font-h3 tracking-tight text-on-surface' }, t.dataSourceEmptyTitle),
+        h('p', { className: 'mt-2 text-sm leading-6 text-on-surface-variant' }, t.dataSourceEmptyBody.replace('{dbPath}', dbPath || '.runq/runq.db')),
+        h('code', { className: 'mt-4 block w-fit rounded-xl bg-slate-950 px-md py-3 font-mono text-mono text-blue-300' }, t.demoDataCommand)
+      ]),
+      alternatives.length > 0 ? h('div', { className: 'min-w-56 space-y-2' }, [
+        h('p', { className: 'text-label-caps font-label-caps uppercase text-outline' }, t.availableDataSources || t.chooseDataSource),
+        ...alternatives.map((source) => h('button', {
+          className: 'flex w-full items-center justify-between gap-3 rounded-xl border border-outline-variant/40 bg-white/70 px-3 py-2 text-left text-sm font-medium hover:border-primary/40',
+          key: source.path,
+          onClick: () => switchDataSource(source.path),
+          type: 'button'
+        }, [
+          h('span', { className: 'truncate' }, source.label),
+          h('span', { className: 'rounded-full bg-primary/10 px-2 py-0.5 font-mono text-mono text-primary' }, source.session_count)
+        ]))
+      ]) : null
+    ])
+  ]);
 }
 
 /* ---------------- Performance + Advisor ---------------- */
@@ -905,7 +1206,7 @@ function recommendationImpact(rec, sessions) {
   );
   const verified = followups.some((session) =>
     session.satisfaction?.label === 'accepted' ||
-    Number(session.quality?.outcome_confidence || 0) >= 0.8 ||
+    trustScoreValue(session.quality) >= 80 ||
     Number(session.telemetry?.verification_passed_count || 0) > 0
   );
   return { followupCount: followups.length, status: verified ? 'verified' : 'pending' };
@@ -958,13 +1259,14 @@ function AdvisorPanel({ recommendations, t }) {
   ]);
 }
 
-function FloatingChat({ t }) {
+function FloatingHelp({ t }) {
   return h('div', { className: 'fixed bottom-8 right-8 z-50' },
     h('a', {
       className: 'w-14 h-14 bg-primary text-white rounded-full shadow-2xl shadow-primary/40 flex items-center justify-center hover:scale-110 active:scale-90 transition-all',
       href: '/docs',
-      title: t.navDocs
-    }, h(MaterialIcon, { className: 'text-3xl', name: 'forum' }))
+      'aria-label': t.helpDocs,
+      title: t.helpDocs
+    }, h(MaterialIcon, { className: 'text-3xl', name: 'menu_book' }))
   );
 }
 
@@ -1006,7 +1308,7 @@ function RunHistoryTable({ sessions, selectedSessionId, onSelect, t }) {
                   h('td', { className: 'p-md' },
                     h('span', { className: 'flex items-center gap-2' }, [statusDot(verdict.tone), h('span', null, verdict.label)])
                   ),
-                  h('td', { className: 'p-md text-right font-mono text-mono' }, `${percent(session.quality?.outcome_confidence)}%`)
+                  h('td', { className: 'p-md text-right font-mono text-mono' }, `${trustScoreValue(session.quality)}%`)
                 ]);
               })
             )
@@ -1117,7 +1419,7 @@ function RunInbox({ sessions, selectedSessionId, onSelect, runSearch, setRunSear
                   h('td', { className: 'p-md' },
                     h('span', { className: 'flex items-center gap-2' }, [statusDot(verdict.tone), h('span', null, verdict.label)])
                   ),
-                  h('td', { className: 'p-md text-right font-mono text-mono' }, `${percent(session.quality?.outcome_confidence)}%`),
+                  h('td', { className: 'p-md text-right font-mono text-mono' }, `${trustScoreValue(session.quality)}%`),
                   h('td', { className: 'p-md' }, chip(session.satisfaction?.label || 'unknown', satisfactionTone(session.satisfaction?.label), 'sat')),
                   h('td', { className: 'p-md text-right font-mono text-mono text-outline' }, session.event_count)
                 ]);
@@ -1138,6 +1440,8 @@ function QualityInspector({ session, t }) {
   const quality = session.quality || {};
   const recs = session.recommendations || [];
   const verdict = verdictFor(session, t);
+  const trustScore = trustScoreValue(quality);
+  const dimensions = trustBreakdownEntries(quality);
   return h('section', { className: 'glass-card overflow-hidden rounded-3xl lg:col-span-4' }, [
     h('div', { className: 'flex items-center justify-between border-b border-white/40 bg-surface-container-low/40 px-lg py-md' }, [
       h('h3', { className: 'text-h3 font-h3 tracking-tight' }, t.qualityInspector),
@@ -1146,19 +1450,39 @@ function QualityInspector({ session, t }) {
     h('div', { className: 'space-y-md p-lg' }, [
       h('div', { className: 'rounded-2xl bg-surface-container-low/60 p-md' }, [
         h('div', { className: 'flex items-baseline gap-2' }, [
-          h('span', { className: 'font-mono text-h2 font-h2 tracking-tight' }, `${percent(quality.outcome_confidence)}%`),
+          h('span', { className: 'font-mono text-h2 font-h2 tracking-tight' }, `${trustScore}%`),
           h('span', { className: 'text-sm text-outline' }, verdict.label)
         ]),
+        h('p', { className: 'mt-1 text-label-caps font-label-caps uppercase text-primary' }, t.trustScore),
         h('p', { className: 'mt-2 text-sm text-on-surface-variant' }, session.satisfaction?.signal || t.noSignal)
       ]),
       h('div', { className: 'grid gap-2 md:grid-cols-2' }, [
-        metricStrip(t.confidence, quality.outcome_confidence, 'primary'),
+        metricStrip(t.trustScore, trustScore / 100, 'primary'),
         metricStrip('Verification', quality.verification_coverage, 'info'),
         metricStrip('Rework', quality.rework_risk, 'error'),
         metricStrip('Loop', quality.loop_risk, 'warn')
       ]),
       h('div', null, [
-        h('h4', { className: 'mb-2 text-label-caps font-label-caps uppercase text-outline' }, t.scoreReasons),
+        h('h4', { className: 'mb-2 text-label-caps font-label-caps uppercase text-outline' }, t.trustModel),
+        dimensions.length === 0
+          ? h('p', { className: 'rounded-2xl bg-surface-container-low/60 p-3 text-sm text-outline' }, t.noSignal)
+          : h('div', { className: 'space-y-2' }, dimensions.map((dimension) =>
+              h('article', { className: 'rounded-2xl border border-outline-variant/30 bg-white/60 p-3', key: dimension.key }, [
+                h('div', { className: 'flex items-center justify-between gap-3 text-sm' }, [
+                  h('span', { className: 'font-semibold text-on-surface' }, dimension.label),
+                  h('span', { className: 'font-mono text-mono font-bold text-primary' }, `${dimension.score}%`)
+                ]),
+                h('div', { className: 'mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100' },
+                  h('div', { className: 'h-full rounded-full bg-gradient-to-r from-primary to-secondary-container', style: { width: `${dimension.score}%` } })
+                ),
+                dimension.reasons.length
+                  ? h('p', { className: 'mt-2 text-xs leading-5 text-outline' }, dimension.reasons.slice(0, 2).join(' · '))
+                  : null
+              ])
+            ))
+      ]),
+      h('div', null, [
+        h('h4', { className: 'mb-2 text-label-caps font-label-caps uppercase text-outline' }, t.outcomeEvidence),
         h('div', { className: 'flex flex-wrap gap-2' },
           (quality.reasons || []).length === 0
             ? h('span', { className: 'text-sm text-outline' }, t.noSignal)
@@ -1178,7 +1502,14 @@ function QualityInspector({ session, t }) {
                 h('p', { className: 'text-sm font-semibold text-on-surface' }, rec.title),
                 h('p', { className: 'mt-1 text-xs text-outline' }, rec.summary),
                 h('p', { className: 'mt-2 text-xs text-outline' }, rec.suggested_action),
-                h('p', { className: 'mt-2 text-[10px] uppercase tracking-wider text-outline' }, `${(rec.evidence_event_ids || []).length} ${t.evidenceEvents}`)
+                h('div', { className: 'mt-2 flex flex-wrap items-center gap-2' }, [
+                  h('a', {
+                    'data-action': 'open-recommendation-evidence',
+                    className: 'rounded-lg border border-outline-variant/40 bg-white px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-primary hover:border-primary/40',
+                    href: `/traces?session=${encodeURIComponent(session.session_id)}`
+                  }, t.viewEvidence),
+                  h('span', { className: 'text-[10px] uppercase tracking-wider text-outline' }, `${(rec.evidence_event_ids || []).length} ${t.evidenceEvents}`)
+                ])
               ])
             ))
       ])
@@ -1233,6 +1564,40 @@ function Timeline({ session, events, t, eventSearch, setEventSearch, eventTypeFi
   ]);
 }
 
+function AgentCapabilityOverview({ stats, t }) {
+  const items = [
+    { icon: 'memory', label: t.modelCalls, value: stats.telemetry.modelCalls },
+    { icon: 'terminal', label: t.commandCount, value: stats.telemetry.commands },
+    { icon: 'fact_check', label: t.verificationCount, value: stats.telemetry.verifications },
+    { icon: 'description', label: t.fileChanges, value: stats.telemetry.fileChanges },
+    { icon: 'auto_awesome', label: t.recommendations, value: stats.recommendationCount }
+  ];
+  return h('section', {
+    className: 'glass-card-strong rounded-3xl p-lg',
+    'data-agent-capability-overview': 'true'
+  }, [
+    h('div', { className: 'mb-md flex flex-wrap items-start justify-between gap-3' }, [
+      h('div', null, [
+        h('p', { className: 'text-label-caps font-label-caps uppercase text-primary' }, t.agentOverview),
+        h('h3', { className: 'mt-2 text-h3 font-h3 tracking-tight' }, t.capabilityOverview),
+        h('p', { className: 'mt-2 max-w-3xl text-sm leading-6 text-on-surface-variant' }, t.capabilityOverviewBody)
+      ]),
+      chip(t.realDataNote, 'neutral', 'source')
+    ]),
+    h('div', { className: 'grid grid-cols-2 gap-md md:grid-cols-5' }, items.map((item) =>
+      h('article', { className: 'rounded-2xl border border-outline-variant/30 bg-white/65 p-md', key: item.label }, [
+        h('div', { className: 'mb-3 flex items-center justify-between gap-2' }, [
+          h('span', { className: 'text-label-caps font-label-caps uppercase text-outline' }, item.label),
+          h('span', { className: 'grid h-8 w-8 place-items-center rounded-xl bg-primary/10 text-primary' },
+            h(MaterialIcon, { className: 'text-[18px]', name: item.icon })
+          )
+        ]),
+        h('p', { className: 'font-mono text-h3 font-h3 tracking-tight text-on-surface' }, Number(item.value || 0).toLocaleString())
+      ])
+    ))
+  ]);
+}
+
 function SessionsDetail({ selectedAgent, agents, agentSessions, visibleSessions, selectedSession, selectedSessionId, selectSession, selectedEvents, runFilter, setRunFilter, runSearch, setRunSearch, eventSearch, setEventSearch, eventTypeFilter, setEventTypeFilter, t }) {
   const allStats = calcStats(agentSessions);
   const chartPoints = groupRunsForChart(visibleSessions.length ? visibleSessions : agentSessions);
@@ -1254,6 +1619,7 @@ function SessionsDetail({ selectedAgent, agents, agentSessions, visibleSessions,
         }, agent.display_name)
       ))
     }),
+    h(AgentCapabilityOverview, { key: 'capabilities', stats: allStats, t }),
     h('div', { className: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-gutter' }, [
       h(MetricStat, {
         key: 'runs',
@@ -1395,6 +1761,14 @@ function RecommendationsPage({ sessions, t, onFeedback, feedbackPending, feedbac
             ]),
             h('p', { className: 'text-sm text-on-surface-variant' }, rec.summary),
             rec.suggested_action ? h('p', { className: 'mt-2 text-sm text-outline' }, rec.suggested_action) : null,
+            h('div', { className: 'mt-md flex flex-wrap items-center gap-2' }, [
+              h('a', {
+                'data-action': 'open-recommendation-evidence',
+                className: 'rounded-lg border border-outline-variant/40 bg-white px-3 py-1.5 text-label-caps font-label-caps uppercase text-primary hover:border-primary/40',
+                href: `/traces?session=${encodeURIComponent(rec.session_id)}`
+              }, t.viewEvidence),
+              h('span', { className: 'font-mono text-xs text-outline' }, `${(rec.evidence_event_ids || []).length} ${t.evidenceEvents}`)
+            ]),
             state.note ? h('p', { className: 'mt-2 text-sm text-outline' }, `${t.feedbackNote}: ${state.note}`) : null,
             state.decided_at ? h('p', { className: 'mt-1 font-mono text-xs text-outline' }, `${t.decidedAt}: ${state.decided_at}`) : null,
             impact ? h('div', { className: 'mt-md rounded-2xl border border-outline-variant/30 bg-surface-container-low/60 p-md' }, [
@@ -1486,64 +1860,131 @@ function summaryStat(label, value, tone, icon) {
 
 /* ---------------- Setup Page ---------------- */
 
-function SetupPage({ copiedSetupCommand, onCopySetupCommand, setupAgentId = null, setupHealth, t }) {
+function SetupPage({ copiedSetupCommand, onCopySetupCommand, selectedSetupAgentId, setSelectedSetupAgentId, setupAgentId = null, setupHealth, t }) {
   const setupAgentName = setupAgentId ? agentMeta(setupAgentId)[1] : null;
   const checks = (setupHealth?.checks || []).filter((check) =>
-    !setupAgentId ||
-    check.agent_id === setupAgentId ||
-    (!check.agent_id && setupAgentName && check.label.toLowerCase() === setupAgentName.toLowerCase())
+    setupAgentId
+      ? check.agent_id === setupAgentId ||
+        (!check.agent_id && setupAgentName && check.label.toLowerCase() === setupAgentName.toLowerCase())
+      : Boolean(knownAgentIdForSetupCheck(check))
   );
   const scopedOk = checks.length > 0 && checks.every((check) => check.status === 'ok');
+  const setupAgents = knownAgents.filter(([agentId]) => !setupAgentId || agentId === setupAgentId).map((agent) => {
+    const [agentId] = agent;
+    return { agent, check: setupCheckForAgent(setupHealth, agentId) };
+  });
+  const selectedId = setupAgentId || selectedSetupAgentId || setupAgents.find(({ check }) => check?.status !== 'ok')?.agent[0] || setupAgents[0]?.agent[0] || 'codex';
+  const selectedAgent = agentMeta(selectedId);
+  const selectedCheck = setupCheckForAgent(setupHealth, selectedId);
+  const selectedCommand = setupCommandForAgent(setupHealth, selectedId);
+  const selectedSkill = setupSkillForAgent(selectedAgent, selectedCommand);
+  const selectedCopyState = copiedSetupCommand?.command === selectedCommand ? copiedSetupCommand.status : 'idle';
+  const selectedCopyLabel = selectedCopyState === 'copied' ? t.copied : selectedCopyState === 'failed' ? t.copyFailed : t.connectAction;
+  const selectedConnected = selectedCheck?.status === 'ok';
   return h('section', { className: 'space-y-lg', id: 'setup' }, [
     h(PageHeader, {
       eyebrow: t.eyebrowSetup,
-      title: setupAgentName ? `${setupAgentName} · ${t.setupHealth}` : t.setupHealth,
+      title: setupAgentName ? `${setupAgentName} · ${t.setupHealth}` : t.setupWizardTitle,
       subtitle: t.setupModuleBody,
       actions: [
         chip(scopedOk || (!setupAgentName && setupHealth?.ok) ? t.setupReady : t.setupCheck, scopedOk || (!setupAgentName && setupHealth?.ok) ? 'good' : 'warn', 'status')
       ]
     }),
-    checks.length === 0
-      ? h('p', { className: 'glass-card rounded-3xl border border-dashed border-outline-variant/40 p-xl text-center text-sm text-outline' }, t.setupUnavailable)
-      : h('div', { className: 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-gutter' }, checks.map((check) =>
-          {
-            const command = check.remediation || check.summary;
-            const copyState = copiedSetupCommand?.command === command ? copiedSetupCommand.status : 'idle';
-            const copyLabel = copyState === 'copied' ? t.copied : copyState === 'failed' ? t.copyFailed : t.fix;
-            return h('article', { className: 'glass-card rounded-3xl p-lg', key: check.id }, [
-              h('div', { className: 'mb-md flex items-center justify-between' }, [
-                h('div', { className: 'flex items-center gap-3' }, [
-                  h('div', { className: 'grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-primary to-secondary-container text-white' },
-                    h(MaterialIcon, { className: 'text-[22px]', name: 'integration_instructions' })
-                  ),
-                  h('h3', { className: 'text-h3 font-h3 tracking-tight' }, check.label)
-                ]),
-                chip(check.status, check.status === 'ok' ? 'good' : 'warn')
+    h('div', {
+      'aria-modal': 'true',
+      'data-action': 'open-agent-setup-wizard',
+      className: 'glass-card-strong rounded-3xl border border-primary/10 p-lg shadow-2xl shadow-primary/10',
+      role: 'dialog'
+    }, [
+      h('div', { className: 'mb-lg flex flex-wrap items-start justify-between gap-4' }, [
+        h('div', null, [
+          h('h3', { className: 'text-h3 font-h3 tracking-tight' }, t.setupWizardTitle),
+          h('p', { className: 'mt-2 max-w-2xl text-sm leading-6 text-on-surface-variant' }, t.setupWizardBody)
+        ]),
+        chip(selectedConnected ? t.setupReady : t.setupCheck, selectedConnected ? 'good' : 'warn')
+      ]),
+      h('div', { className: 'grid grid-cols-1 gap-gutter lg:grid-cols-[0.8fr_1.2fr_0.8fr]' }, [
+        h('section', { className: 'space-y-sm' }, [
+          h('h4', { className: 'text-label-caps font-label-caps uppercase text-outline' }, t.setupChooseAgent),
+          ...setupAgents.map(({ agent, check }) => {
+            const [agentId, label, brand, logo, gradient] = agent;
+            const selected = agentId === selectedId;
+            return h('button', {
+              'data-action': 'select-setup-agent',
+              'data-agent-id': agentId,
+              className: [
+                'flex w-full items-center justify-between gap-3 rounded-2xl border p-md text-left transition-all',
+                selected ? 'border-primary/50 bg-primary/5' : 'border-outline-variant/30 bg-white/60 hover:border-primary/30'
+              ].join(' '),
+              key: agentId,
+              onClick: () => setSelectedSetupAgentId?.(agentId),
+              type: 'button'
+            }, [
+              h('span', { className: 'flex items-center gap-3' }, [
+                h('span', { className: `grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br ${gradient} text-white` },
+                  h(AgentLogo, { className: 'h-6 w-6 text-white', logo })
+                ),
+                h('span', null, [
+                  h('span', { className: 'block text-sm font-semibold text-on-surface' }, label),
+                  h('span', { className: 'block text-xs text-outline' }, brand)
+                ])
               ]),
-              h('p', { className: 'text-sm text-on-surface-variant' }, check.summary),
-              check.status !== 'ok' && command
-                ? h('div', { className: 'mt-md space-y-sm' }, [
-                    h('code', { className: 'block break-words rounded-xl bg-slate-950 px-md py-3 font-mono text-mono text-blue-300' }, `${t.fix}: ${command}`),
-                    h('button', {
-                      'data-action': 'copy-setup-command',
-                      'data-command': command,
-                      'data-copy-state': copyState,
-                      className: 'inline-flex items-center gap-2 rounded-lg border border-outline-variant/40 bg-white px-3 py-1.5 text-label-caps font-label-caps uppercase text-on-surface hover:border-primary/40',
-                      onClick: () => onCopySetupCommand?.(command),
-                      type: 'button'
-                    }, [
-                      h(MaterialIcon, { className: 'text-[16px]', name: copyState === 'copied' ? 'check' : copyState === 'failed' ? 'error' : 'content_copy' }),
-                      copyLabel
-                    ]),
-                    h('span', {
-                      'aria-live': 'polite',
-                      className: 'block min-h-4 text-xs text-outline'
-                    }, copyState === 'idle' ? '' : copyLabel)
-                  ])
-                : null
+              chip(check?.status || 'missing', check?.status === 'ok' ? 'good' : 'warn')
             ]);
-          }
-        ))
+          })
+        ]),
+        h('section', { className: 'space-y-md' }, [
+          h('h4', { className: 'text-label-caps font-label-caps uppercase text-outline' }, t.setupSteps),
+          h('article', { className: 'rounded-2xl border border-outline-variant/30 bg-white/70 p-md' }, [
+            h('div', { className: 'mb-sm flex items-center gap-2 font-semibold text-on-surface' }, [
+              h(MaterialIcon, { className: 'text-[18px]', name: 'terminal' }),
+              t.commandLineSetup
+            ]),
+            h('code', { className: 'block break-words rounded-xl bg-slate-950 px-md py-3 font-mono text-mono text-blue-300' }, `${t.connectAction}: ${selectedCommand}`),
+            h('button', {
+              'data-action': 'copy-setup-command',
+              'data-command': selectedCommand,
+              'data-copy-state': selectedCopyState,
+              className: 'mt-sm inline-flex items-center gap-2 rounded-lg border border-outline-variant/40 bg-white px-3 py-1.5 text-label-caps font-label-caps uppercase text-on-surface hover:border-primary/40',
+              onClick: () => onCopySetupCommand?.(selectedCommand),
+              type: 'button'
+            }, [
+              h(MaterialIcon, { className: 'text-[16px]', name: selectedCopyState === 'copied' ? 'check' : selectedCopyState === 'failed' ? 'error' : 'content_copy' }),
+              selectedCopyLabel
+            ]),
+            h('span', { 'aria-live': 'polite', className: 'ml-2 text-xs text-outline' }, selectedCopyState === 'idle' ? '' : selectedCopyLabel)
+          ]),
+          h('article', { className: 'rounded-2xl border border-outline-variant/30 bg-white/70 p-md' }, [
+            h('div', { className: 'mb-sm flex items-center gap-2 font-semibold text-on-surface' }, [
+              h(MaterialIcon, { className: 'text-[18px]', name: 'smart_toy' }),
+              t.agentSelfSetup
+            ]),
+            h('p', { className: 'mb-sm text-sm text-on-surface-variant' }, t.agentSelfSetupBody),
+            h('code', { className: 'block max-h-40 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-950 px-md py-3 font-mono text-mono text-blue-300' }, selectedSkill)
+          ])
+        ]),
+        h('section', { className: 'space-y-md rounded-2xl border border-outline-variant/30 bg-white/70 p-md' }, [
+          h('h4', { className: 'text-label-caps font-label-caps uppercase text-outline' }, t.setupSuccess),
+          h('div', { className: 'flex items-center gap-3' }, [
+            h('div', { className: `grid h-12 w-12 place-items-center rounded-full ${selectedConnected ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}` },
+              h(MaterialIcon, { className: 'text-[24px]', name: selectedConnected ? 'check_circle' : 'pending' })
+            ),
+            h('div', null, [
+              h('p', { className: 'font-semibold text-on-surface' }, selectedConnected ? 'Connected' : selectedCheck?.status || 'Missing'),
+              h('p', { className: 'text-sm text-on-surface-variant' }, selectedConnected ? t.connectedNotice : t.pendingNotice)
+            ])
+          ]),
+          h('a', {
+            'data-action': 'check-agent-connection',
+            className: 'inline-flex items-center gap-2 rounded-lg border border-outline-variant/40 bg-white px-3 py-1.5 text-label-caps font-label-caps uppercase text-on-surface hover:border-primary/40',
+            href: `/agents/${encodeURIComponent(selectedId)}/setup`
+          }, [
+            h(MaterialIcon, { className: 'text-[16px]', name: 'fact_check' }),
+            t.checkConnection
+          ])
+        ])
+      ])
+    ])
   ]);
 }
 
@@ -1601,6 +2042,7 @@ function DocsPage({ t }) {
         ]),
         docStep('integration_instructions', t.docsConnectAgents, t.docsConnectAgentsBody, [
           'node src/cli.js init all --db .runq/runq.db',
+          'node src/cli.js init codex --db .runq/runq.db',
           'node src/cli.js doctor --db .runq/runq.db'
         ])
       ])
@@ -1642,7 +2084,7 @@ function EvaluationsPage({ sessions, t }) {
                 chip(verdict.label, verdict.tone, 'verdict')
               ]),
               h('p', { className: 'text-sm font-semibold text-on-surface' }, agentMeta(session.framework)[1]),
-              h('p', { className: 'mt-1 text-xs text-outline' }, `${t.confidence}: ${percent(session.quality?.outcome_confidence)}% · ${t.verificationCount}: ${session.telemetry?.verification_passed_count || 0}/${session.telemetry?.verification_count || 0}`),
+              h('p', { className: 'mt-1 text-xs text-outline' }, `${t.confidence}: ${trustScoreValue(session.quality)}% · ${t.verificationCount}: ${session.telemetry?.verification_passed_count || 0}/${session.telemetry?.verification_count || 0}`),
               h('a', {
                 'data-action': 'open-evaluation-trace',
                 className: 'mt-md inline-flex items-center gap-2 rounded-lg border border-outline-variant/40 bg-white px-3 py-1.5 text-label-caps font-label-caps uppercase text-primary hover:border-primary/40',
@@ -1675,7 +2117,7 @@ function EvaluationsPage({ sessions, t }) {
                 h('td', { className: 'p-md font-mono text-mono text-primary' }, `#${s.session_id}`),
                 h('td', { className: 'p-md font-semibold' }, agentMeta(s.framework)[1]),
                 h('td', { className: 'p-md' }, chip(s.satisfaction?.label || 'unknown', satisfactionTone(s.satisfaction?.label), 'sat')),
-                h('td', { className: 'p-md text-right font-mono text-mono' }, `${percent(s.quality?.outcome_confidence)}%`),
+                h('td', { className: 'p-md text-right font-mono text-mono' }, `${trustScoreValue(s.quality)}%`),
                 h('td', { className: 'p-md text-right font-mono text-mono' }, s.event_count)
               ]))
             )
@@ -1686,7 +2128,7 @@ function EvaluationsPage({ sessions, t }) {
 
 /* ---------------- App Root ---------------- */
 
-export function RunInboxApp({ initialSessions = [], initialEvents = [], setupHealth = null, activeView = 'agents', initialLang = 'zh', initialAgentId = null, initialRunSearch = '' }) {
+export function RunInboxApp({ initialSessions = [], initialEvents = [], setupHealth = null, activeView = 'agents', initialLang = 'zh', initialAgentId = null, initialRunSearch = '', dbPath = '', dataSources = [] }) {
   const [lang, setLangState] = useState(() => normalizeLang(initialLang));
   const t = copy[lang];
   const [sessions, setSessions] = useState(initialSessions);
@@ -1702,12 +2144,31 @@ export function RunInboxApp({ initialSessions = [], initialEvents = [], setupHea
   const [feedbackError, setFeedbackError] = useState(null);
   const [recommendationNotes, setRecommendationNotes] = useState({});
   const [copiedSetupCommand, setCopiedSetupCommand] = useState(null);
+  const [selectedSetupAgentId, setSelectedSetupAgentId] = useState(initialAgentId ?? 'codex');
+  const [setupWizardOpen, setSetupWizardOpen] = useState(false);
 
   useEffect(() => {
     const stored = getStoredLang();
     const normalized = normalizeLang(stored);
     if (stored && normalized !== lang) setLangState(normalized);
   }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      refresh().catch(() => {});
+    }, SESSION_AUTO_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [dbPath, selectedSessionId]);
+
+  useEffect(() => {
+    if (!selectedSessionId) return undefined;
+    const timer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      refreshEventsForSession(selectedSessionId).catch(() => {});
+    }, EVENT_AUTO_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [dbPath, selectedSessionId]);
 
   function setLang(next) {
     const normalized = normalizeLang(next);
@@ -1743,7 +2204,7 @@ export function RunInboxApp({ initialSessions = [], initialEvents = [], setupHea
   const chartPoints = groupRunsForChart(sessions);
 
   async function refresh() {
-    const response = await fetch('/api/sessions');
+    const response = await fetch(`/api/sessions${apiDbQuery(dbPath)}`);
     const next = await response.json();
     setSessions(next);
     const nextSelected = selectedSessionId && next.some((s) => s.session_id === selectedSessionId)
@@ -1758,7 +2219,11 @@ export function RunInboxApp({ initialSessions = [], initialEvents = [], setupHea
     setSelectedSessionId(sessionId);
     setEventSearch('');
     setEventTypeFilter('all');
-    const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/events`);
+    await refreshEventsForSession(sessionId);
+  }
+
+  async function refreshEventsForSession(sessionId) {
+    const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/events${apiDbQuery(dbPath)}`);
     setEvents(await response.json());
   }
 
@@ -1773,7 +2238,7 @@ export function RunInboxApp({ initialSessions = [], initialEvents = [], setupHea
     setFeedbackError(null);
     try {
       const response = await fetch(
-        `/api/sessions/${encodeURIComponent(sessionId)}/recommendations/${encodeURIComponent(recommendationId)}/feedback`,
+        `/api/sessions/${encodeURIComponent(sessionId)}/recommendations/${encodeURIComponent(recommendationId)}/feedback${apiDbQuery(dbPath)}`,
         { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ decision, note: note.trim() || null }) }
       );
       if (!response.ok) {
@@ -1799,6 +2264,15 @@ export function RunInboxApp({ initialSessions = [], initialEvents = [], setupHea
     }
   }
 
+  function openSetupWizard(agentId = null) {
+    if (agentId) setSelectedSetupAgentId(agentId);
+    setSetupWizardOpen(true);
+  }
+
+  function closeSetupWizard() {
+    setSetupWizardOpen(false);
+  }
+
   const breadcrumbByView = {
     agents: t.navAgents,
     sessions: t.navSessions,
@@ -1811,7 +2285,8 @@ export function RunInboxApp({ initialSessions = [], initialEvents = [], setupHea
 
   const viewContent = {
     agents: [
-      h(AgentFleet, { agents, key: 'fleet', t }),
+      sessions.length === 0 ? h(DataSourceEmptyState, { dataSources, dbPath, key: 'empty-source', t }) : null,
+      h(AgentFleet, { agents, key: 'fleet', onOpenSetupWizard: openSetupWizard, t }),
       h('p', { className: 'sr-only', key: 'product-modules' }, t.productSections),
       h('div', { className: 'grid grid-cols-1 lg:grid-cols-3 gap-gutter', key: 'mid' }, [
         h(PerformanceTrend, { chartPoints, key: 'perf', stats, t }),
@@ -1833,17 +2308,52 @@ export function RunInboxApp({ initialSessions = [], initialEvents = [], setupHea
         onFeedback: submitRecommendationFeedback, recommendationNotes, sessions: recommendationSessions, setRecommendationNote, t
       })
     ],
-    setup: [h(SetupPage, { copiedSetupCommand, key: 'setup', onCopySetupCommand: copySetupCommand, setupAgentId: initialAgentId, setupHealth, t })],
+    setup: [h(SetupPage, { copiedSetupCommand, key: 'setup', onCopySetupCommand: copySetupCommand, selectedSetupAgentId, setSelectedSetupAgentId, setupAgentId: initialAgentId, setupHealth, t })],
     docs: [h(DocsPage, { key: 'docs', t })]
   }[activeView] || [];
 
-  return h('div', { className: 'min-h-screen text-on-background' }, [
-    h(Sidebar, { activeView, key: 'sidebar', t }),
-    h(MobileNav, { activeView, key: 'mobile-nav', t }),
-    h(TopBar, { activeView, key: 'top', lang, notificationCount, notificationHref, onRefresh: refresh, searchQuery: runSearch, selectedAgent, setLang, t }),
+  const setupWizardOverlay = setupWizardOpen && activeView !== 'setup'
+    ? h('div', { className: 'fixed inset-0 z-50', key: 'setup-wizard-overlay' }, [
+        h('button', {
+          'aria-label': 'Close setup wizard',
+          className: 'absolute inset-0 h-full w-full bg-slate-950/40 backdrop-blur-sm',
+          onClick: closeSetupWizard,
+          type: 'button'
+        }),
+        h('div', { className: 'absolute inset-x-4 bottom-6 top-20 overflow-auto rounded-3xl bg-surface p-md shadow-2xl sm:left-24 sm:right-8' }, [
+          h('button', {
+            'data-action': 'close-agent-setup-wizard',
+            'aria-label': 'Close setup wizard',
+            className: 'absolute right-5 top-5 z-10 grid h-10 w-10 place-items-center rounded-full border border-outline-variant/40 bg-white text-on-surface shadow-sm hover:border-primary/40',
+            onClick: closeSetupWizard,
+            type: 'button'
+          }, h(MaterialIcon, { className: 'text-[20px]', name: 'close' })),
+          h(SetupPage, {
+            copiedSetupCommand,
+            key: 'setup-wizard',
+            onCopySetupCommand: copySetupCommand,
+            selectedSetupAgentId,
+            setSelectedSetupAgentId,
+            setupAgentId: null,
+            setupHealth,
+            t
+          })
+        ])
+      ])
+    : null;
+
+  return h('div', {
+    className: 'min-h-screen text-on-background',
+    'data-auto-refresh-events-ms': EVENT_AUTO_REFRESH_MS,
+    'data-auto-refresh-sessions-ms': SESSION_AUTO_REFRESH_MS
+  }, [
+    h(Sidebar, { activeView, dbPath, key: 'sidebar', t }),
+    h(MobileNav, { activeView, dbPath, key: 'mobile-nav', t }),
+    h(TopBar, { activeView, dataSources, dbPath, key: 'top', lang, notificationCount, notificationHref: appendDbParam(notificationHref, dbPath), onRefresh: refresh, searchQuery: runSearch, selectedAgent, setLang, t }),
     h('main', { className: 'min-h-screen px-4 pb-28 pt-24 sm:ml-20 sm:px-8 sm:pb-12' }, [
       h('div', { className: 'mx-auto max-w-[1400px] space-y-8', key: 'container' }, viewContent)
     ]),
-    h(FloatingChat, { key: 'fab', t })
+    setupWizardOverlay,
+    h(FloatingHelp, { key: 'fab', t })
   ]);
 }

@@ -22,7 +22,19 @@ test('checkSetupHealth reports configured Claude Code, Codex, OpenClaw, and Herm
       SessionStart: [{ hooks: [{ command: 'node /repo/runq/adapters/claude-code/hook.js --db /tmp/runq.db' }] }]
     }
   }));
-  writeFileSync(join(dir, '.codex', 'config.toml'), 'notify = ["node", "/repo/runq/adapters/codex/hook.js"]\n');
+  writeFileSync(join(dir, '.codex', 'config.toml'), [
+    '[features]',
+    'codex_hooks = true',
+    '',
+    ...['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop'].flatMap((hookName) => [
+      `[[hooks.${hookName}]]`,
+      `[[hooks.${hookName}.hooks]]`,
+      'type = "command"',
+      'command = "node /repo/runq/adapters/codex/hook.js --db /tmp/runq.db --quiet"',
+      ''
+    ]),
+    ''
+  ].join('\n'));
   writeFileSync(join(dir, '.openclaw', 'agents', 'main', 'sessions', 's1.jsonl'), '{}\n');
   writeFileSync(join(dir, '.openclaw', 'extensions', 'runq-reporter', 'index.cjs'), 'api.on("llm_input", () => {})\n');
   writeFileSync(join(dir, '.openclaw', 'openclaw.json'), JSON.stringify({
@@ -53,6 +65,7 @@ test('checkSetupHealth reports configured Claude Code, Codex, OpenClaw, and Herm
   assert.equal(health.checks.find((check) => check.id === 'claude-code')?.status, 'ok');
   assert.equal(health.checks.find((check) => check.id === 'codex')?.agent_id, 'codex');
   assert.equal(health.checks.find((check) => check.id === 'codex')?.status, 'ok');
+  assert.match(health.checks.find((check) => check.id === 'codex')?.summary, /Codex hooks configured/);
   assert.equal(health.checks.find((check) => check.id === 'openclaw')?.agent_id, 'openclaw');
   assert.equal(health.checks.find((check) => check.id === 'openclaw')?.status, 'ok');
   assert.match(health.checks.find((check) => check.id === 'openclaw')?.summary, /Native plugin configured/);
@@ -77,6 +90,48 @@ test('CLI doctor prints setup health JSON', () => {
   assert.equal(Array.isArray(health.checks), true);
   assert.equal(health.checks.some((check) => check.id === 'node'), true);
   assert.match(health.checks.find((check) => check.id === 'claude-code')?.remediation, /init claude-code/);
+});
+
+test('checkSetupHealth reports legacy Codex notify config as manual upgrade', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'runq-doctor-codex-notify-'));
+  mkdirSync(join(dir, '.codex'), { recursive: true });
+  writeFileSync(join(dir, '.codex', 'config.toml'), 'notify = ["node", "/repo/runq/adapters/codex/hook.js"]\n');
+
+  const health = checkSetupHealth({
+    homeDir: dir,
+    runqRoot,
+    dbPath: join(dir, 'runq.db')
+  });
+  const codex = health.checks.find((check) => check.id === 'codex');
+
+  assert.equal(codex?.status, 'manual');
+  assert.match(codex?.summary, /Legacy Codex notify hook configured/);
+  assert.match(codex?.remediation, /init codex/);
+});
+
+test('checkSetupHealth reports partial Codex hooks config as manual upgrade', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'runq-doctor-codex-partial-'));
+  mkdirSync(join(dir, '.codex'), { recursive: true });
+  writeFileSync(join(dir, '.codex', 'config.toml'), [
+    '[features]',
+    'codex_hooks = true',
+    '',
+    '[[hooks.SessionStart]]',
+    '[[hooks.SessionStart.hooks]]',
+    'type = "command"',
+    'command = "node /repo/runq/adapters/codex/hook.js --db /tmp/runq.db --quiet"',
+    ''
+  ].join('\n'));
+
+  const health = checkSetupHealth({
+    homeDir: dir,
+    runqRoot,
+    dbPath: join(dir, 'runq.db')
+  });
+  const codex = health.checks.find((check) => check.id === 'codex');
+
+  assert.equal(codex?.status, 'manual');
+  assert.match(codex?.summary, /Codex RunQ hooks are incomplete/);
 });
 
 test('CLI doctor prints remediation hints for failed checks', () => {

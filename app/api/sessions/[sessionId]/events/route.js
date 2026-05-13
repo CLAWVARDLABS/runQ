@@ -1,9 +1,10 @@
-import { getRunInboxEvents } from '../../../../../src/run-inbox-data.js';
+import { getRunInboxEvents, resolveRunInboxDbPath } from '../../../../../src/run-inbox-data.js';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-export async function GET(_request, { params }) {
+export async function GET(request, { params }) {
   const { sessionId } = await params;
-  return Response.json(getRunInboxEvents(decodeURIComponent(sessionId)));
+  const dbPath = resolveRunInboxDbPath(new URL(request.url).searchParams.get('db'));
+  return Response.json(getRunInboxEvents(decodeURIComponent(sessionId), dbPath));
 }

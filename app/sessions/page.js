@@ -6,10 +6,10 @@ export const runtime = 'nodejs';
 
 export const metadata = {
   title: 'RunQ Sessions',
-  description: 'Run history and quality inspector for local coding agents'
+  description: 'Run history and quality inspector for local agents'
 };
 
 export default async function SessionsPage({ searchParams }) {
   const params = await searchParams;
-  return <RunQPage activeView="sessions" initialLang={await pageLang(Promise.resolve(params))} initialRunSearch={params?.q || ''} />;
+  return <RunQPage activeView="sessions" db={params?.db} initialLang={await pageLang(Promise.resolve(params))} initialRunSearch={params?.q || ''} />;
 }

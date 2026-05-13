@@ -100,6 +100,19 @@ test('normalizeCodexHook maps legacy notify agent-turn-complete to session.ended
   assert.match(event.payload.last_assistant_message_hash, /^sha256:/);
 });
 
+test('normalizeCodexHook maps Stop hook to session.ended reason', () => {
+  const [event] = normalizeCodexHook({
+    session_id: 'codex-stop-session',
+    hook_event_name: 'Stop',
+    last_assistant_message: 'Done'
+  }, {
+    now: '2026-05-05T12:20:00.000Z'
+  });
+
+  assert.equal(event.event_type, 'session.ended');
+  assert.equal(event.payload.ended_reason, 'Stop');
+});
+
 test('Codex hook command reads stdin and appends normalized events', () => {
   const dir = mkdtempSync(join(tmpdir(), 'runq-codex-hook-'));
   const dbPath = join(dir, 'runq.db');
@@ -122,6 +135,63 @@ test('Codex hook command reads stdin and appends normalized events', () => {
 
   const store = new RunqStore(dbPath);
   const events = store.listEventsForSession('codex-session-hook');
+  store.close();
+
+  assert.equal(events.length, 1);
+  assert.equal(events[0].event_type, 'session.ended');
+});
+
+test('Codex hook command accepts notify JSON argument when --db is present', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'runq-codex-notify-'));
+  const dbPath = join(dir, 'runq.db');
+  const result = spawnSync(process.execPath, [
+    hookPath,
+    '--db',
+    dbPath,
+    JSON.stringify({
+      type: 'agent-turn-complete',
+      'turn-id': 'codex-notify-hook',
+      'last-assistant-message': 'RUNQ_CODEX_OK',
+      'input-messages': ['Run a small Codex task.']
+    })
+  ], {
+    encoding: 'utf8'
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /recorded 1 RunQ events/);
+
+  const store = new RunqStore(dbPath);
+  const events = store.listEventsForSession('codex-notify-hook');
+  store.close();
+
+  assert.equal(events.length, 1);
+  assert.equal(events[0].event_type, 'session.ended');
+  assert.equal(events[0].payload.ended_reason, 'agent-turn-complete');
+});
+
+test('Codex hook command can run quietly for lifecycle hooks', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'runq-codex-quiet-'));
+  const dbPath = join(dir, 'runq.db');
+  const result = spawnSync(process.execPath, [
+    hookPath,
+    '--db',
+    dbPath,
+    '--quiet'
+  ], {
+    input: JSON.stringify({
+      session_id: 'codex-quiet-hook',
+      hook_event_name: 'Stop',
+      last_assistant_message: 'Done'
+    }),
+    encoding: 'utf8'
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, '');
+
+  const store = new RunqStore(dbPath);
+  const events = store.listEventsForSession('codex-quiet-hook');
   store.close();
 
   assert.equal(events.length, 1);

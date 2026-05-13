@@ -3,6 +3,8 @@ import {
   eventId,
   hash,
   isVerificationCommand,
+  metadataHash,
+  objectKeyCount,
   textSummary
 } from '../../src/normalize-utils.js';
 
@@ -205,6 +207,18 @@ function commandFromEvent(evt) {
     '';
 }
 
+function toolMcpServer(input) {
+  const evt = event(input);
+  const ctx = context(input);
+  return evt.mcpServer ?? evt.mcp_server ?? evt.serverName ?? evt.server_name ?? evt.params?.mcp_server ?? evt.params?.mcpServer ?? ctx.mcpServer ?? ctx.mcp_server;
+}
+
+function toolSkillName(input) {
+  const evt = event(input);
+  const ctx = context(input);
+  return evt.skillName ?? evt.skill_name ?? evt.params?.skill_name ?? evt.params?.skillName ?? ctx.skillName ?? ctx.skill_name;
+}
+
 function commandStarted(input, now) {
   const evt = event(input);
   const command = commandFromEvent(evt);
@@ -226,6 +240,12 @@ function exitCodeFromToolResult(evt) {
   if (Number.isInteger(evt.result?.exit_code)) {
     return evt.result.exit_code;
   }
+  if (Number.isInteger(evt.result?.details?.exitCode)) {
+    return evt.result.details.exitCode;
+  }
+  if (Number.isInteger(evt.result?.details?.exit_code)) {
+    return evt.result.details.exit_code;
+  }
   if (evt.error) {
     return 1;
   }
@@ -235,6 +255,7 @@ function exitCodeFromToolResult(evt) {
 function commandEnded(input, now) {
   const evt = event(input);
   const command = commandFromEvent(evt);
+  const durationMs = evt.durationMs ?? evt.result?.details?.durationMs;
   return baseEvent(input, 'command.ended', now, 'metadata', {
     command_id: evt.toolCallId ?? hash(command),
     command_kind: 'shell',
@@ -245,7 +266,7 @@ function commandEnded(input, now) {
     stdout_hash: hash(evt.result?.stdout),
     stderr_hash: hash(evt.result?.stderr ?? evt.error),
     output_hash: hash(evt.result?.output),
-    duration_ms: evt.durationMs,
+    duration_ms: durationMs,
     is_verification: isVerificationCommand(command),
     verification_kind: isVerificationCommand(command) ? 'command' : undefined
   });
@@ -253,21 +274,34 @@ function commandEnded(input, now) {
 
 function toolStarted(input, now) {
   const evt = event(input);
+  const actionInput = evt.params;
   return baseEvent(input, 'tool.call.started', now, 'metadata', {
     tool_name: evt.toolName ?? context(input).toolName ?? 'unknown',
     tool_type: 'openclaw_tool',
-    tool_call_id: evt.toolCallId ?? hash(JSON.stringify(evt.params ?? {}))
+    tool_call_id: evt.toolCallId ?? hash(JSON.stringify(evt.params ?? {})),
+    mcp_server: toolMcpServer(input),
+    skill_name: toolSkillName(input),
+    input_hash: metadataHash(actionInput),
+    input_key_count: objectKeyCount(actionInput)
   });
 }
 
 function toolEnded(input, now) {
   const evt = event(input);
+  const actionInput = evt.params;
+  const actionOutput = evt.result;
   return baseEvent(input, 'tool.call.ended', now, 'metadata', {
     tool_name: evt.toolName ?? context(input).toolName ?? 'unknown',
     tool_type: 'openclaw_tool',
     tool_call_id: evt.toolCallId ?? hash(JSON.stringify(evt.params ?? {})),
     status: evt.error || evt.result?.success === false ? 'error' : 'ok',
-    duration_ms: evt.durationMs
+    duration_ms: evt.durationMs,
+    mcp_server: toolMcpServer(input),
+    skill_name: toolSkillName(input),
+    input_hash: metadataHash(actionInput),
+    input_key_count: objectKeyCount(actionInput),
+    output_hash: metadataHash(actionOutput),
+    output_key_count: objectKeyCount(actionOutput)
   });
 }
 

@@ -41,6 +41,14 @@ export class RunqStore {
 
       CREATE INDEX IF NOT EXISTS idx_events_time
         ON events (timestamp);
+
+      CREATE TABLE IF NOT EXISTS session_metrics (
+        session_id TEXT PRIMARY KEY,
+        event_count INTEGER NOT NULL,
+        last_event_at TEXT NOT NULL,
+        metrics_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
     `);
   }
 
@@ -115,6 +123,48 @@ export class RunqStore {
     `);
 
     return select.all(sessionId).map((row) => JSON.parse(row.event_json));
+  }
+
+  getSessionMetrics(sessionId) {
+    const select = this.#db.prepare(`
+      SELECT session_id, event_count, last_event_at, metrics_json, updated_at
+      FROM session_metrics
+      WHERE session_id = ?
+    `);
+    const row = select.get(sessionId);
+    if (!row) return null;
+    return {
+      session_id: row.session_id,
+      event_count: row.event_count,
+      last_event_at: row.last_event_at,
+      metrics: JSON.parse(row.metrics_json),
+      updated_at: row.updated_at
+    };
+  }
+
+  upsertSessionMetrics(sessionId, { event_count, last_event_at, metrics }) {
+    const upsert = this.#db.prepare(`
+      INSERT INTO session_metrics (
+        session_id,
+        event_count,
+        last_event_at,
+        metrics_json,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(session_id) DO UPDATE SET
+        event_count = excluded.event_count,
+        last_event_at = excluded.last_event_at,
+        metrics_json = excluded.metrics_json,
+        updated_at = excluded.updated_at
+    `);
+
+    upsert.run(
+      sessionId,
+      event_count,
+      last_event_at,
+      JSON.stringify(metrics),
+      new Date().toISOString()
+    );
   }
 
   close() {

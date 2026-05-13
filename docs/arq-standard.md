@@ -1,17 +1,17 @@
 # ARQ: Agent Run Quality Standard
 
-ARQ is RunQ's coding-agent quality standard. It defines how to observe, score, and improve agent runs that read code, edit files, execute commands, and hand work back to a developer.
+ARQ is RunQ's agent-run quality standard. It defines how to observe, score, and improve agent runs that call models, use tools, execute workflows, change state, run verification, and hand work back to a user or system.
 
 ## Scope
 
-ARQ is intentionally narrower than general LLM observability. It focuses on engineering outcomes:
+ARQ is intentionally narrower than general LLM observability. The current reference implementation focuses on engineering agents, but the protocol is meant to generalize to any agent run where actions and verification can be captured:
 
 - Did the agent understand the repo and task boundary?
 - Did it change the intended files?
 - Did it run meaningful verification?
 - Did it stop or recover after failures?
-- Did the developer accept, correct, rerun, abandon, or escalate the work?
-- What should change in repo instructions, tests, or agent policy before the next run?
+- Did the user or evaluator accept, correct, rerun, abandon, or escalate the work?
+- What should change in instructions, tests, tools, workflow, or agent policy before the next run?
 
 ## Event Layers
 
@@ -41,7 +41,7 @@ Model events capture provider, model, duration, token metadata, request/response
 - `file.changed`
 - `git.diff.summarized`
 
-Engineering events are the center of ARQ. A useful coding-agent trace must show what the agent actually did to the repository and shell, not only what it asked the model.
+Action events are the center of ARQ. A useful agent trace must show what the agent actually did through tools, commands, files, services, and workflow steps, not only what it asked the model.
 
 ### Verification
 
@@ -70,14 +70,15 @@ The minimum satisfaction labels are:
 - `abandoned`: the developer stopped using the output.
 - `escalated`: a human owner took over.
 
-## Quality Dimensions
+## RunQ Trust Model
 
-- Outcome Confidence: probability the run produced usable work.
-- Verification Coverage: strength of tests, builds, lints, or other checks after changes.
-- Rework Risk: likelihood the work needs another pass.
-- Permission Friction: time and interruption cost from permissions.
-- Loop Risk: repeated failed commands or unproductive retries.
-- Cost Efficiency: token and time cost relative to useful progress.
+- Trust Score: primary `0..100` estimate that the run held up.
+- Evidence Strength: amount and quality of captured telemetry.
+- Verification Strength: strength of tests, builds, lints, or other checks after changes.
+- Execution Quality: whether the run avoided repeated failures and completed cleanly.
+- Autonomy Reliability: whether permission friction, reruns, or abandonment reduced confidence.
+- Cost Discipline: token and time cost relative to useful progress.
+- Risk Exposure: observed downside risk such as unverified changes or failed final checks.
 - Repo Agent Readiness: whether the repo has enough instructions, scripts, and boundaries for agents.
 
 ## Recommendation Categories

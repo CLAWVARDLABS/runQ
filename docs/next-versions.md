@@ -11,6 +11,7 @@ Status: completed for local alpha; real-session tuning moves into v0.3 field val
 - Add default local redaction for prompts, command strings, command output, and secret-looking strings.
 - Add setup health remediation hints for Claude Code, Codex, OpenClaw, and Hermes.
 - Add setup health checks for Claude Code, Codex, OpenClaw, and Hermes.
+- Add first-class Codex hooks setup with notify fallback.
 - Add public-preview readiness reporting with usable timeline and redaction checks.
 - Add richer satisfaction labels: corrected, rerun, escalated.
 - Add feedback recommendations for correction, rerun, and escalation outcomes.
@@ -22,7 +23,7 @@ Status: completed for local alpha; real-session tuning moves into v0.3 field val
 
 - Batch native OpenClaw plugin hook events asynchronously.
 - Add richer Claude Code permission and file-change hook coverage as stable hook payloads are confirmed.
-- Add Codex fixtures as public hook contracts stabilize.
+- Add richer Codex fixtures as hook contracts evolve.
 - Add Hermes harness coverage once its hook/event shape is confirmed.
 - Add golden quality snapshots for real imported sessions.
 - Run a live OpenClaw code-editing task against the coding-task harness repo.

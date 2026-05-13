@@ -6,7 +6,7 @@ Protocol version: `0.1.0`
 
 ## Purpose
 
-RunQ defines a common protocol for coding-agent run quality. It captures what happened during a coding-agent session and adds derived quality signals that help users understand whether the work held up.
+RunQ defines a common protocol for agent run quality. It captures what happened during an agent session and adds derived quality signals that help users understand whether the work held up.
 
 ## Core Concepts
 
@@ -95,14 +95,28 @@ RunQ collectors redact sensitive payload fields before persistence. The default 
 
 Events that arrive with `privacy.level` set to `sensitive` or `secret` are stored as redacted metadata by default.
 
-## Score Dimensions
+## Score Fields
 
-- Outcome Confidence
-- Verification Coverage
-- Rework Risk
-- Permission Friction
-- Loop Risk
-- Cost Efficiency
+`outcome.scored` payloads include compatibility scalar fields and the newer RunQ Trust Model:
+
+- `trust_score`: integer `0..100`, the primary RunQ trust estimate.
+- `trust_breakdown`: explainable dimension map.
+- `outcome_confidence`: legacy `0..1` confidence value retained for compatibility.
+- `verification_coverage`
+- `rework_risk`
+- `permission_friction`
+- `loop_risk`
+- `cost_efficiency`
+- `reasons`
+
+Trust breakdown dimensions:
+
+- `evidence_strength`
+- `verification_strength`
+- `execution_quality`
+- `autonomy_reliability`
+- `cost_discipline`
+- `risk_exposure`
 
 ## Recommendation Categories
 

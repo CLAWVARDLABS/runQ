@@ -39,6 +39,10 @@ test('scoreRun gives high confidence when verification passes after file changes
   assert.equal(score.verification_coverage, 1);
   assert.equal(score.rework_risk, 0.1);
   assert.equal(score.reasons.includes('verification_passed_after_changes'), true);
+  assert.equal(score.trust_score, 90);
+  assert.equal(score.trust_breakdown.verification_strength.score, 100);
+  assert.equal(score.trust_breakdown.execution_quality.score >= 80, true);
+  assert.equal(score.trust_breakdown.risk_exposure.score <= 20, true);
 });
 
 test('scoreRun lowers confidence when tests fail at session end', () => {
@@ -57,6 +61,34 @@ test('scoreRun lowers confidence when tests fail at session end', () => {
   assert.equal(score.verification_coverage, 0.4);
   assert.equal(score.rework_risk, 0.8);
   assert.equal(score.reasons.includes('verification_failed_at_end'), true);
+  assert.equal(score.trust_score <= 35, true);
+  assert.equal(score.trust_breakdown.verification_strength.score <= 45, true);
+  assert.equal(score.trust_breakdown.execution_quality.score <= 45, true);
+  assert.equal(score.trust_breakdown.risk_exposure.score >= 65, true);
+  assert.equal(score.trust_breakdown.verification_strength.reasons.includes('verification_failed_at_end'), true);
+});
+
+test('scoreRun emits a RunQ Trust Model breakdown independent of satisfaction', () => {
+  const score = scoreRun([
+    event('session.started'),
+    event('user.prompt.submitted', { prompt_summary: 'Research competitors and draft a plan', prompt_length: 44 }),
+    event('model.call.ended', { provider: 'openai', model: 'gpt-x', total_tokens: 1200 }),
+    event('tool.call.ended', { tool_name: 'web_search', tool_type: 'browser_or_search', status: 'ok' }),
+    event('command.ended', { binary: 'node', exit_code: 0, is_verification: true, verification_kind: 'check' }),
+    event('session.ended', { ended_reason: 'completed' })
+  ]);
+
+  assert.equal(typeof score.trust_score, 'number');
+  assert.deepEqual(Object.keys(score.trust_breakdown).sort(), [
+    'autonomy_reliability',
+    'cost_discipline',
+    'evidence_strength',
+    'execution_quality',
+    'risk_exposure',
+    'verification_strength'
+  ]);
+  assert.equal(score.trust_breakdown.evidence_strength.label, 'Evidence Strength');
+  assert.equal(score.trust_breakdown.autonomy_reliability.reasons.includes('no_satisfaction_signal'), true);
 });
 
 test('scoreRun treats a passing verification after an earlier failure as recovered', () => {

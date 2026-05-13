@@ -1,76 +1,80 @@
 # RunQ
 
-Open protocol and local collector for coding-agent run quality.
+Open protocol and local collector for agent run quality.
 
-RunQ captures what coding agents did, scores whether the work likely held up, and generates evidence-backed recommendations to improve future runs.
+RunQ captures what an agent did, reconstructs the run as an inspectable trace, scores whether the result is trustworthy, and turns weak spots into evidence-backed recommendations.
+
+> When agents start doing real work, RunQ answers the operational question: did this run actually hold up?
+
+![RunQ Open Graph](public/runq-og.svg)
 
 ## Status
 
 RunQ is an Apache-2.0 open source project in `0.2.x` local alpha.
 
-Use it today as a local developer preview for collecting coding-agent run metadata, inspecting timelines, scoring run quality, and testing workflow recommendations. Do not treat `0.x` protocol or schema shapes as stable until `1.0`.
+Use it today to collect local agent-run metadata, inspect timelines, review task workflows, score run trust, and test recommendation loops. The `0.x` protocol and schema can change before `1.0`.
 
-## Open Source Project Links
+## Why RunQ
 
-- License: [Apache-2.0](LICENSE)
-- Changelog: [CHANGELOG.md](CHANGELOG.md)
-- Contributing guide: [CONTRIBUTING.md](CONTRIBUTING.md)
-- Security policy: [SECURITY.md](SECURITY.md)
-- Code of conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
-- Support: [SUPPORT.md](SUPPORT.md)
-- Release process: [RELEASE.md](RELEASE.md)
+AI agents now call models, use tools, execute shell commands, request permissions, edit files, call MCP servers, invoke skills, and hand work back to humans. Generic LLM observability can show model traces, but it usually does not answer:
 
-## Why
+- What did the agent actually do from request to result?
+- Which tools, MCP servers, skills, files, and verifications were involved?
+- Is the result trustworthy enough to ship, accept, or automate?
+- What workflow change would make future runs more reliable?
 
-AI coding agents now read files, edit code, run commands, request permissions, spawn subagents, and execute tests. Generic LLM observability can show model calls and traces, but it does not fully answer the engineering question:
+RunQ focuses on the full agent run, not just the LLM call.
 
-> Did this agent run actually work?
+## 3-Minute Local Preview
 
-RunQ focuses on that question.
-
-## What RunQ Standardizes
-
-- Coding-agent session events.
-- Command, tool, model, permission, file-change, and verification events.
-- Outcome quality dimensions.
-- Privacy levels for local-sensitive telemetry.
-- Evidence-backed recommendations.
-
-## Quality Dimensions
-
-- Outcome Confidence
-- Verification Coverage
-- Rework Risk
-- Permission Friction
-- Loop Risk
-- Cost Efficiency
-- Repo Agent Readiness
-
-## Quick Start
-
-Local alpha setup:
+Requirements: Node.js `>=22.5.0`.
 
 ```bash
 npm install
-bash scripts/install-local.sh
-```
-
-Try the full Run Inbox without connecting an agent first:
-
-```bash
 node src/cli.js demo --db .runq/demo.db
 npm run inbox -- --db .runq/demo.db --port 4545
 ```
 
-The demo database includes successful, failed, needs-review, and follow-up sessions so the Agents, Sessions, Traces, Evaluations, Recommendations, Setup, and Docs pages have realistic local data on first launch.
+Open `http://localhost:4545`.
 
-Connect a local agent automatically:
+The demo database includes successful, failed, needs-review, and follow-up sessions so Agents, Sessions, Traces, Evaluations, Recommendations, Setup, and Docs have realistic local data before you connect an agent.
+
+For the full path, see [docs/quickstart.md](docs/quickstart.md).
+
+## What You Get
+
+- **Run Summary**: user request, execution path, call footprint, verification result, and RunQ Trust Score.
+- **Workflow trace**: model calls, regular tools, MCP tools, skills, commands, file changes, verification, and outcome as a task flow.
+- **RunQ Trust Model**: a single trust score plus evidence strength, verification strength, execution quality, autonomy reliability, cost discipline, and risk exposure.
+- **Recommendation loop**: evidence-backed recommendations with accept/dismiss decisions and follow-up impact tracking.
+- **Local-first privacy**: metadata-first capture with default redaction before events are persisted.
+- **Agent adapters**: Claude Code, Codex, OpenClaw, and Hermes surfaces.
+
+## Core Concepts
+
+RunQ standardizes:
+
+- `Session`: a continuous interaction with an agent runtime.
+- `Task`: a user goal inside a session.
+- `Event`: raw telemetry evidence such as model, tool, command, file, verification, or feedback events.
+- `Workflow node`: a visualized step derived from raw events.
+- `Run Summary`: a deterministic explanation generated from structured events.
+- `RunQ Trust Score`: RunQ's current estimate of whether the run held up.
+- `Trust Breakdown`: six explainable dimensions behind the score.
+- `Recommendation`: a workflow improvement backed by evidence events.
+
+Read [docs/concepts.md](docs/concepts.md) before building an adapter or changing scoring behavior.
+
+## Connect Agents
+
+Configure every supported local surface:
 
 ```bash
 node src/cli.js init all --db .runq/runq.db
+node src/cli.js doctor --db .runq/runq.db
 ```
 
-Or configure a single surface:
+Or configure one surface:
 
 ```bash
 node src/cli.js init claude-code --db .runq/runq.db
@@ -79,152 +83,33 @@ node src/cli.js init openclaw --db .runq/runq.db
 node src/cli.js init hermes --db .runq/runq.db
 ```
 
-Check setup health and exact remediation commands:
+`runq init codex` enables Codex command hooks with `codex_hooks = true` and also writes the legacy `notify` entry as a compatibility fallback. Hooks capture session, prompt, tool, command, and stop events; notify-only configs can only capture turn completion.
 
-```bash
-node src/cli.js doctor --db .runq/runq.db
-node src/cli.js doctor --json --db .runq/runq.db
-```
-
-Check public-preview readiness from local captured sessions:
-
-```bash
-node src/cli.js readiness --db .runq/runq.db
-node src/cli.js readiness --json --db .runq/runq.db
-```
-
-OpenClaw has two collection paths. `runq init openclaw` installs a native OpenClaw plugin reporter and enables conversation hook access. For older sessions or plugin-disabled environments, import session JSONL directly:
+OpenClaw supports a native reporter plugin and JSONL import:
 
 ```bash
 node src/cli.js import-openclaw ~/.openclaw/agents/main/sessions/<session-id>.jsonl --db .runq/runq.db
-```
-
-Run the lightweight OpenClaw reporter in one-shot or daemon mode:
-
-```bash
 npm run openclaw:reporter -- --once --db .runq/runq.db
-npm run openclaw:reporter -- --db .runq/runq.db
 ```
 
-Ingest the sample session:
+## Protocol
 
-```bash
-node src/cli.js ingest examples/sessions/basic-run.json --db .runq/dev.db
-```
+RunQ is both a product workbench and an open event protocol.
 
-Run the OpenClaw-like product harness:
+Start with:
 
-```bash
-npm run harness:openclaw -- --scenario verified-success --db .runq/openclaw-harness.db
-npm run harness:openclaw -- --scenario repeated-test-failure --db .runq/openclaw-harness.db
-```
+- [protocol/protocol-v0.md](protocol/protocol-v0.md)
+- [protocol/events.schema.json](protocol/events.schema.json)
+- [docs/arq-standard.md](docs/arq-standard.md)
+- [docs/concepts.md](docs/concepts.md)
 
-Run a deterministic real coding-task harness that creates a small repo, observes a failing verification, applies a bugfix, and observes the passing verification:
+Protocol changes should update the schema, validation logic, tests, and examples together.
 
-```bash
-npm run harness:coding-task -- --db .runq/coding-task.db --repo .runq/coding-task-repo
-```
-
-Run the full v0.2 local-alpha acceptance check:
-
-```bash
-npm run release-check
-```
-
-The release check records three product scenarios into one local database: OpenClaw verified success, OpenClaw repeated verification failure, and a real coding-task recovery run. It exits non-zero if scoring, recommendations, usable timelines, or default redaction regress.
-
-Run multiple product-test agents and ingest them into one Run Inbox database:
-
-```bash
-npm run agent-manager -- --mode local --db .runq/agent-manager.db --out .runq/agent-manager
-```
-
-Use Docker-backed test agents:
-
-```bash
-npm run agent-manager -- --mode docker --db .runq/agent-manager.db --out .runq/agent-manager
-```
-
-Run a real latest OpenClaw turn in Docker and require RunQ hook capture:
-
-```bash
-OPENCLAW_E2E_API_KEY="$OPENCLAW_E2E_API_KEY" \
-OPENCLAW_E2E_BASE_URL="https://token.clawvard.school/v1" \
-OPENCLAW_E2E_PROVIDER="Clawvard Token" \
-OPENCLAW_E2E_MODEL="MiniMax-M2.7" \
-npm run openclaw:docker-e2e
-```
-
-List sessions:
-
-```bash
-node src/cli.js sessions --db .runq/dev.db
-```
-
-Record human feedback on a recommendation surfaced for a session:
-
-```bash
-node src/cli.js accept-recommendation <session_id> <recommendation_id> --note "will fix" --db .runq/dev.db
-node src/cli.js dismiss-recommendation <session_id> <recommendation_id> --db .runq/dev.db
-```
-
-Run Inbox stores accept/dismiss decisions as `recommendation.accepted` and
-`recommendation.dismissed` events so future scoring and reports can track
-which optimizations the user actually adopted.
-
-Open the local Run Inbox:
-
-```bash
-npm run inbox -- --db .runq/dev.db --port 4545
-```
-
-Run the Next.js development server while working on the product UI:
-
-```bash
-npm run dev
-```
-
-The development server defaults to `http://localhost:3000` and will print a different port if 3000 is already in use.
-
-Run Inbox is a Next.js + Tailwind workbench. The legacy no-build HTTP server remains available for compatibility:
-
-```bash
-npm run inbox:legacy -- --db .runq/dev.db --port 4545
-```
-
-## Local Privacy Defaults
-
-RunQ stores metadata-first telemetry by default. Sensitive fields such as raw prompts, command strings, command output, token-looking strings, passwords, and API keys are redacted before events are persisted. Normalized adapters preserve hashes, lengths, binary names, exit codes, durations, and verification flags so scoring still works without storing raw private content.
-
-Use `privacy.level = "sensitive"` or `privacy.level = "secret"` only when an integration has seen raw private content. The local collector will downgrade stored events to metadata after redaction unless a future explicit opt-in policy changes that behavior.
-
-## Run Inbox
-
-Run Inbox includes:
-
-- A product shell where the left sidebar is the only global module navigation, and the top bar is reserved for current-page context, search, refresh, notifications, and language switching.
-- Setup Health for Claude Code, Codex, OpenClaw, Hermes, Node.js, and the local database.
-- Run search and status filters for accepted, failed, and needs-review sessions.
-- Timeline search and event-type filters.
-- Quality Inspector with Outcome Confidence, satisfaction, and evidence-backed recommendations.
-- Readiness reporting for usable timeline coverage and secret-like payload findings.
-- Agent Session Traces at `/traces`, with expandable grouped trace events for lifecycle, model calls, commands, files, verification, and feedback.
-
-Run tests:
+## Development
 
 ```bash
 npm test
-```
-
-Build the Next.js app:
-
-```bash
 npm run build
-```
-
-Run browser end-to-end tests:
-
-```bash
 npm run test:e2e
 ```
 
@@ -239,35 +124,31 @@ npm audit --omit=dev
 env npm_config_cache=.tmp/npm-cache npm pack --dry-run
 ```
 
-## Initial Integrations
+Run product harnesses:
 
-Current adapters:
+```bash
+npm run harness:openclaw -- --scenario verified-success --db .runq/openclaw-harness.db
+npm run harness:openclaw -- --scenario repeated-test-failure --db .runq/openclaw-harness.db
+npm run harness:coding-task -- --db .runq/coding-task.db --repo .runq/coding-task-repo
+```
 
-- Claude Code
-- Codex
-- OpenClaw
-- Hermes
+## Local Privacy Defaults
 
-## Product Harnesses
+RunQ stores metadata-first telemetry by default. Sensitive fields such as raw prompts, command strings, command output, token-looking strings, passwords, and API keys are redacted before events are persisted. Normalized adapters preserve hashes, lengths, binary names, exit codes, durations, and verification flags so scoring still works without storing raw private content.
 
-RunQ includes executable harnesses for agent-framework-like event streams. These are not demos; they are regression tests for the product thesis.
+Use `privacy.level = "sensitive"` or `privacy.level = "secret"` only when an integration has seen raw private content. The local collector will downgrade stored events to metadata after redaction unless a future explicit opt-in policy changes that behavior.
 
-The coding-task harness creates a real temporary JavaScript repo, runs an initially failing verification command, applies a code fix, reruns verification, and records the full RunQ event timeline. Use it to verify that RunQ judges recovered coding-agent work as trusted instead of penalizing the early failure forever.
+## Project Links
 
-The OpenClaw harness produces two deterministic sessions:
-
-- `verified-success`: a coding-agent run changes a file, runs targeted verification, and gets high Outcome Confidence.
-- `repeated-test-failure`: a run changes a file, repeats the same failing verification command, and gets verification and loop-prevention recommendations.
-
-Each scenario records a `satisfaction.recorded` event and has a golden product snapshot under `examples/openclaw-harness/golden/`. Use these harnesses when adding new metrics, adapters, or recommendations so quality scoring changes remain explainable.
-
-## Relationship To OpenTelemetry
-
-RunQ complements OpenTelemetry. It should map model, tool, and agent spans to OpenTelemetry GenAI conventions where possible, while defining coding-agent-specific semantics for commands, permissions, verification, rework, and run quality.
-
-## ARQ Standard
-
-RunQ uses the ARQ Agent Run Quality standard for coding-agent event semantics, satisfaction labels, quality dimensions, recommendation categories, and metadata-first privacy rules. See [docs/arq-standard.md](docs/arq-standard.md).
+- Quickstart: [docs/quickstart.md](docs/quickstart.md)
+- Concepts: [docs/concepts.md](docs/concepts.md)
+- Roadmap: [ROADMAP.md](ROADMAP.md)
+- Changelog: [CHANGELOG.md](CHANGELOG.md)
+- Contributing: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Security: [SECURITY.md](SECURITY.md)
+- Support: [SUPPORT.md](SUPPORT.md)
+- Release process: [RELEASE.md](RELEASE.md)
+- License: [Apache-2.0](LICENSE)
 
 ## Public Preview Readiness
 

@@ -57,3 +57,48 @@ test('getRunInboxSessions annotates accepted recommendations with follow-up impa
   assert.equal(recommendation.impact.followup_count, 1);
   assert.equal(recommendation.impact.verified_session_ids.includes('ses_followup'), true);
 });
+
+test('getRunInboxSessions caches metrics and recomputes when session events change', () => {
+  const dbPath = join(mkdtempSync(join(tmpdir(), 'runq-data-cache-')), 'runq.db');
+  const store = new RunqStore(dbPath);
+  store.appendEvent(event('ses_cache', 'evt_cache_start', 'session.started', '2026-05-02T10:00:00.000Z'));
+  store.appendEvent(event('ses_cache', 'evt_cache_file', 'file.changed', '2026-05-02T10:00:30.000Z'));
+  store.appendEvent(event('ses_cache', 'evt_cache_test', 'command.ended', '2026-05-02T10:01:00.000Z', {
+    binary: 'npm',
+    exit_code: 0,
+    is_verification: true
+  }));
+  store.close();
+
+  const first = getRunInboxSessions(dbPath).find((session) => session.session_id === 'ses_cache');
+  assert.equal(first.quality.trust_score >= 80, true);
+
+  const cacheStore = new RunqStore(dbPath);
+  const cached = cacheStore.getSessionMetrics('ses_cache');
+  assert.equal(cached.event_count, 3);
+  cacheStore.upsertSessionMetrics('ses_cache', {
+    event_count: cached.event_count,
+    last_event_at: cached.last_event_at,
+    metrics: {
+      quality: { trust_score: 7, outcome_confidence: 0.07, reasons: ['cached_marker'] },
+      recommendations: [],
+      satisfaction: null,
+      telemetry: { verification_count: 0 }
+    }
+  });
+  cacheStore.close();
+
+  const reused = getRunInboxSessions(dbPath).find((session) => session.session_id === 'ses_cache');
+  assert.equal(reused.quality.trust_score, 7);
+  assert.deepEqual(reused.quality.reasons, ['cached_marker']);
+
+  const appendStore = new RunqStore(dbPath);
+  appendStore.appendEvent(event('ses_cache', 'evt_cache_done', 'satisfaction.recorded', '2026-05-02T10:02:00.000Z', {
+    label: 'accepted'
+  }));
+  appendStore.close();
+
+  const recomputed = getRunInboxSessions(dbPath).find((session) => session.session_id === 'ses_cache');
+  assert.notEqual(recomputed.quality.trust_score, 7);
+  assert.equal(recomputed.event_count, 4);
+});

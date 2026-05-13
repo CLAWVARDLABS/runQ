@@ -2,6 +2,33 @@ export function percent(value) {
   return Math.round(Number(value || 0) * 100);
 }
 
+export function trustScoreValue(quality) {
+  if (quality?.trust_score !== undefined && quality?.trust_score !== null) {
+    return Math.max(0, Math.min(100, Math.round(Number(quality.trust_score || 0))));
+  }
+  return percent(quality?.outcome_confidence);
+}
+
+export function trustBreakdownEntries(quality) {
+  const breakdown = quality?.trust_breakdown || {};
+  const keys = [
+    'evidence_strength',
+    'verification_strength',
+    'execution_quality',
+    'autonomy_reliability',
+    'cost_discipline',
+    'risk_exposure'
+  ];
+  return keys
+    .filter((key) => breakdown[key])
+    .map((key) => ({
+      key,
+      label: breakdown[key].label || key,
+      score: Math.max(0, Math.min(100, Math.round(Number(breakdown[key].score || 0)))),
+      reasons: breakdown[key].reasons || []
+    }));
+}
+
 export function confidenceTone(value) {
   const score = Number(value || 0);
   if (score >= 0.8) return 'good';
@@ -18,7 +45,7 @@ export function satisfactionTone(label) {
 
 export function verdictFor(session) {
   const quality = session?.quality || {};
-  const score = Number(quality.outcome_confidence || 0);
+  const score = trustScoreValue(quality) / 100;
   const hasSatisfaction = Boolean(session?.satisfaction?.label);
   if (score >= 0.8) return 'Likely completed';
   if (score >= 0.5) return 'Needs review';
@@ -28,6 +55,7 @@ export function verdictFor(session) {
 
 export function eventKind(event) {
   if (event.event_type?.startsWith('model.')) return 'model';
+  if (event.event_type?.startsWith('tool.call.')) return 'command';
   if (event.event_type === 'file.changed' || event.event_type === 'git.diff.summarized') return 'file';
   if (event.event_type?.startsWith('command.')) {
     if (event.payload?.is_verification && Number(event.payload?.exit_code) === 0) return 'success';
@@ -54,6 +82,10 @@ export function summarizeEvent(event) {
       return `${payload.binary || 'command'}${payload.is_verification ? ' · verification' : ''}`;
     case 'command.ended':
       return `${payload.binary || 'command'} exited ${payload.exit_code ?? 'unknown'}${payload.is_verification ? ' · verification' : ''}`;
+    case 'tool.call.started':
+      return `${payload.tool_name || 'tool'} started`;
+    case 'tool.call.ended':
+      return `${payload.tool_name || 'tool'} ${payload.status || 'completed'}`;
     case 'permission.resolved':
       return `${payload.decision || 'resolved'} · waited ${payload.wait_ms || 0}ms`;
     case 'satisfaction.recorded':

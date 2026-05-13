@@ -10,5 +10,6 @@ export const metadata = {
 };
 
 export default async function DocsPage({ searchParams }) {
-  return <RunQPage activeView="docs" initialLang={await pageLang(searchParams)} />;
+  const params = await searchParams;
+  return <RunQPage activeView="docs" db={params?.db} initialLang={await pageLang(Promise.resolve(params))} />;
 }

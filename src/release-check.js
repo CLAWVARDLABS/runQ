@@ -60,10 +60,11 @@ export function runV02ReleaseCheck({
   const checks = [
     check(
       'openclaw_verified_success',
-      openclawVerifiedSuccess.quality.outcome_confidence >= 0.9 &&
+      (openclawVerifiedSuccess.quality.trust_score || openclawVerifiedSuccess.quality.outcome_confidence * 100) >= 90 &&
         openclawVerifiedSuccess.satisfaction.label === 'accepted',
-      'OpenClaw verified-success harness scores accepted verified work as high confidence.',
+      'OpenClaw verified-success harness scores accepted verified work as high trust.',
       {
+        trust_score: openclawVerifiedSuccess.quality.trust_score,
         outcome_confidence: openclawVerifiedSuccess.quality.outcome_confidence,
         satisfaction_label: openclawVerifiedSuccess.satisfaction.label
       }
@@ -83,11 +84,12 @@ export function runV02ReleaseCheck({
       'coding_task_recovery',
       codingTaskRecovery.commands[0].status !== 0 &&
         codingTaskRecovery.commands[1].status === 0 &&
-        codingTaskRecovery.quality.outcome_confidence >= 0.9 &&
+        (codingTaskRecovery.quality.trust_score || codingTaskRecovery.quality.outcome_confidence * 100) >= 90 &&
         codingTaskCategories.length === 0,
       'Coding-task harness recognizes early failed verification recovered by a later passing verification.',
       {
         command_statuses: codingTaskRecovery.commands.map((command) => command.status),
+        trust_score: codingTaskRecovery.quality.trust_score,
         outcome_confidence: codingTaskRecovery.quality.outcome_confidence,
         recommendation_categories: codingTaskCategories
       }

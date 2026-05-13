@@ -261,7 +261,7 @@ test('CLI init writes Claude Code hook settings without overwriting existing hoo
   assert.match(settings.hooks.SessionStart[0].hooks[0].command, new RegExp(dbPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });
 
-test('CLI init writes Codex notify config while preserving existing TOML', () => {
+test('CLI init writes Codex hooks and notify config while preserving existing TOML', () => {
   const dir = tempDir();
   const codexDir = join(dir, '.codex');
   const dbPath = join(dir, 'runq.db');
@@ -283,8 +283,19 @@ test('CLI init writes Codex notify config while preserving existing TOML', () =>
   assert.equal(result.status, 0, result.stderr);
   const config = readFileSync(join(codexDir, 'config.toml'), 'utf8');
   assert.match(config, /model = "gpt-5\.2-codex"/);
+  assert.match(config, /\[features\]/);
+  assert.match(config, /codex_hooks = true/);
+  assert.match(config, /\[\[hooks\.SessionStart\]\]/);
+  assert.match(config, /\[\[hooks\.UserPromptSubmit\]\]/);
+  assert.match(config, /\[\[hooks\.PreToolUse\]\]/);
+  assert.match(config, /\[\[hooks\.PostToolUse\]\]/);
+  assert.match(config, /\[\[hooks\.Stop\]\]/);
+  assert.match(config, /matcher = "Bash\|apply_patch"/);
+  assert.match(config, /--quiet/);
   assert.match(config, /notify = \[/);
   assert.match(config, /adapters\/codex\/hook\.js/);
+  assert.equal(config.indexOf('notify = [') < config.indexOf('[features]'), true);
+  assert.equal(config.indexOf('[features]') < config.indexOf('[[hooks.SessionStart]]'), true);
 });
 
 test('CLI init writes OpenClaw plugin package and enables prompt hook access', () => {

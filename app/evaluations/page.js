@@ -6,9 +6,10 @@ export const runtime = 'nodejs';
 
 export const metadata = {
   title: 'RunQ Evaluations',
-  description: 'Evaluation loop for coding-agent sessions'
+  description: 'Evaluation loop for agent sessions'
 };
 
 export default async function EvaluationsPage({ searchParams }) {
-  return <RunQPage activeView="evaluations" initialLang={await pageLang(searchParams)} />;
+  const params = await searchParams;
+  return <RunQPage activeView="evaluations" db={params?.db} initialLang={await pageLang(Promise.resolve(params))} />;
 }

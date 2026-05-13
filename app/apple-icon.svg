@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180">
+  <defs>
+    <linearGradient id="runq-bg" x1="20" y1="16" x2="164" y2="168" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#111827"/>
+      <stop offset="1" stop-color="#0050CB"/>
+    </linearGradient>
+    <linearGradient id="runq-orbit" x1="36" y1="42" x2="144" y2="140" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#00EEFC"/>
+      <stop offset="1" stop-color="#0066FF"/>
+    </linearGradient>
+  </defs>
+  <rect width="180" height="180" rx="40" fill="url(#runq-bg)"/>
+  <path d="M43 93c0-30 22-53 52-53 24.5 0 43 16 48 39" fill="none" stroke="url(#runq-orbit)" stroke-width="14" stroke-linecap="round"/>
+  <path d="M138 91c0 30-22 53-52 53-25 0-44-16.5-48.5-40" fill="none" stroke="#F8FAFC" stroke-width="14" stroke-linecap="round"/>
+  <path d="M106 122l25 25" stroke="#F8FAFC" stroke-width="14" stroke-linecap="round"/>
+  <circle cx="95" cy="93" r="23" fill="#F8FAFC"/>
+  <circle cx="95" cy="93" r="10" fill="#0050CB"/>
+  <circle cx="143" cy="77" r="12" fill="#22C55E"/>
+  <path d="M138 77.3l3.6 3.7 7.5-8.8" fill="none" stroke="#F8FAFC" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

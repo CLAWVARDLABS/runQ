@@ -1,12 +1,12 @@
 # Contributing To RunQ
 
-RunQ is an open protocol and reference implementation for coding-agent run quality.
+RunQ is an open protocol and reference implementation for agent run quality.
 
 ## Contribution Areas
 
 Useful contributions:
 
-- Adapter fixtures from Claude Code, Codex, OpenClaw, Hermes, and other coding agents.
+- Adapter fixtures from Claude Code, Codex, OpenClaw, Hermes, and other agent runtimes.
 - Protocol improvements for command, permission, verification, and rework events.
 - Scoring rules with clear evidence.
 - Recommendation rules with measurable impact.

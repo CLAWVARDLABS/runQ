@@ -6,9 +6,10 @@ export const runtime = 'nodejs';
 
 export const metadata = {
   title: 'RunQ Agents',
-  description: 'Agent fleet overview for local coding-agent observability'
+  description: 'Agent fleet overview for local agent observability'
 };
 
 export default async function AgentsPage({ searchParams }) {
-  return <RunQPage activeView="agents" initialLang={await pageLang(searchParams)} />;
+  const params = await searchParams;
+  return <RunQPage activeView="agents" db={params?.db} initialLang={await pageLang(Promise.resolve(params))} />;
 }

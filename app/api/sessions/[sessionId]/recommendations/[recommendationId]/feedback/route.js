@@ -1,17 +1,18 @@
 import { RunqStore } from '../../../../../../../src/store.js';
 import { recordRecommendationFeedback } from '../../../../../../../src/recommendation-feedback.js';
-import { defaultRunInboxDbPath } from '../../../../../../../src/run-inbox-data.js';
+import { resolveRunInboxDbPath } from '../../../../../../../src/run-inbox-data.js';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 export async function POST(request, { params }) {
   const { sessionId, recommendationId } = await params;
+  const dbPath = resolveRunInboxDbPath(new URL(request.url).searchParams.get('db'));
   const body = await request.json().catch(() => ({}));
   const decision = body?.decision;
   const note = body?.note ?? null;
 
-  const store = new RunqStore(defaultRunInboxDbPath());
+  const store = new RunqStore(dbPath);
   try {
     const event = recordRecommendationFeedback(store, {
       sessionId: decodeURIComponent(sessionId),

@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="90" y1="40" x2="1120" y2="620" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F7F9FB"/>
+      <stop offset="1" stop-color="#DAE1FF"/>
+    </linearGradient>
+    <linearGradient id="mark-bg" x1="0" y1="0" x2="220" y2="220" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#111827"/>
+      <stop offset="1" stop-color="#0050CB"/>
+    </linearGradient>
+    <linearGradient id="orbit" x1="48" y1="54" x2="178" y2="174" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#00EEFC"/>
+      <stop offset="1" stop-color="#0066FF"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <circle cx="1060" cy="120" r="220" fill="#00EEFC" opacity=".13"/>
+  <circle cx="130" cy="540" r="260" fill="#0066FF" opacity=".10"/>
+  <g transform="translate(108 120)">
+    <rect width="220" height="220" rx="48" fill="url(#mark-bg)"/>
+    <path d="M52 113c0-37 27-65 64-65 30 0 53 19.5 59 48" fill="none" stroke="url(#orbit)" stroke-width="17" stroke-linecap="round"/>
+    <path d="M170 111c0 37-27 65-64 65-31 0-54-20.5-59.5-49" fill="none" stroke="#F8FAFC" stroke-width="17" stroke-linecap="round"/>
+    <path d="M130 149l31 31" stroke="#F8FAFC" stroke-width="17" stroke-linecap="round"/>
+    <circle cx="116" cy="113" r="27" fill="#F8FAFC"/>
+    <circle cx="116" cy="113" r="12" fill="#0050CB"/>
+    <circle cx="176" cy="94" r="15" fill="#22C55E"/>
+    <path d="M170 94l4.5 4.7 9-10.5" fill="none" stroke="#F8FAFC" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="380" y="205" fill="#191C1E" font-family="Inter, Arial, sans-serif" font-size="92" font-weight="800">RunQ</text>
+  <text x="384" y="278" fill="#0050CB" font-family="Inter, Arial, sans-serif" font-size="30" font-weight="700" letter-spacing="4">AGENT RUN QUALITY</text>
+  <text x="384" y="360" fill="#424656" font-family="Inter, Arial, sans-serif" font-size="36" font-weight="500">Local observability for coding-agent work.</text>
+  <text x="384" y="420" fill="#727687" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="500">Capture runs, inspect evidence, and improve future workflows.</text>
+</svg>

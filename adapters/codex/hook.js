@@ -12,15 +12,31 @@ function parseDbPath(args) {
   return args[dbIndex + 1];
 }
 
+function optionIndexes(argv) {
+  const indexes = new Set();
+  for (let index = 0; index < argv.length; index += 1) {
+    if (argv[index] === '--db') {
+      indexes.add(index);
+      indexes.add(index + 1);
+    } else if (argv[index] === '--quiet') {
+      indexes.add(index);
+    }
+  }
+  return indexes;
+}
+
 function readStdinOrArg(argv) {
-  if (argv.length > 0 && !argv.includes('--db')) {
-    return argv[0];
+  const options = optionIndexes(argv);
+  const positional = argv.filter((_, index) => !options.has(index));
+  if (positional.length > 0) {
+    return positional[0];
   }
   return readFileSync(0, 'utf8');
 }
 
 export function main(argv = process.argv.slice(2)) {
   const dbPath = parseDbPath(argv);
+  const quiet = argv.includes('--quiet');
   const rawInput = readStdinOrArg(argv);
   const input = JSON.parse(rawInput);
   const events = normalizeCodexHook(input);
@@ -31,7 +47,9 @@ export function main(argv = process.argv.slice(2)) {
   }
   store.close();
 
-  console.log(`recorded ${events.length} RunQ events`);
+  if (!quiet) {
+    console.log(`recorded ${events.length} RunQ events`);
+  }
   return 0;
 }
 

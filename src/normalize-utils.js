@@ -4,6 +4,16 @@ export function hash(value) {
   return `sha256:${createHash('sha256').update(String(value ?? '')).digest('hex')}`;
 }
 
+export function metadataHash(value) {
+  if (value === undefined || value === null || value === '') return undefined;
+  return hash(typeof value === 'string' ? value : JSON.stringify(value));
+}
+
+export function objectKeyCount(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  return Object.keys(value).length;
+}
+
 export function eventId(parts) {
   return `evt_${hash(parts.join(':')).slice(7, 23)}`;
 }

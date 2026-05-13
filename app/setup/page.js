@@ -6,9 +6,10 @@ export const runtime = 'nodejs';
 
 export const metadata = {
   title: 'RunQ Setup',
-  description: 'Setup health for supported local coding-agent hooks'
+  description: 'Setup health for supported local agent hooks'
 };
 
 export default async function SetupPage({ searchParams }) {
-  return <RunQPage activeView="setup" initialLang={await pageLang(searchParams)} />;
+  const params = await searchParams;
+  return <RunQPage activeView="setup" db={params?.db} initialLang={await pageLang(Promise.resolve(params))} />;
 }

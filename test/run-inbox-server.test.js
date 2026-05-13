@@ -130,6 +130,7 @@ test('Run Inbox server returns sessions as JSON', () => {
   assert.equal(response.json[0].satisfaction.label, 'abandoned');
   assert.deepEqual(response.json[0].telemetry, {
     model_call_count: 1,
+    tool_call_count: 0,
     input_tokens: 100,
     output_tokens: 25,
     total_tokens: 125,

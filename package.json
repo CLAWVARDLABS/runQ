@@ -1,7 +1,7 @@
 {
   "name": "runq",
   "version": "0.2.0",
-  "description": "Open protocol and local collector for coding-agent run quality.",
+  "description": "Open protocol and local collector for agent run quality.",
   "type": "module",
   "homepage": "https://github.com/THEZIONLABS/runQ#readme",
   "repository": {
@@ -13,7 +13,7 @@
   },
   "keywords": [
     "agent-observability",
-    "coding-agents",
+    "agent-runs",
     "ai-agents",
     "otel",
     "opentelemetry",
@@ -32,6 +32,7 @@
     "docs/*.md",
     "examples/",
     "protocol/",
+    "public/",
     "scripts/",
     "src/",
     "tools/",
@@ -41,6 +42,7 @@
     "LICENSE",
     "README.md",
     "RELEASE.md",
+    "ROADMAP.md",
     "SECURITY.md",
     "SUPPORT.md"
   ],
@@ -64,6 +66,7 @@
   "license": "Apache-2.0",
   "dependencies": {
     "@tailwindcss/postcss": "^4.2.4",
+    "@xyflow/react": "^12.10.2",
     "next": "^16.2.4",
     "postcss": "^8.5.13",
     "react": "^19.2.5",
