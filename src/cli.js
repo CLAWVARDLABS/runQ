@@ -9,6 +9,7 @@ import { recommendRunImprovements } from './recommendations.js';
 import { recordRecommendationFeedback } from './recommendation-feedback.js';
 import { initAgent } from './init.js';
 import { importOpenClawSessionFile } from './openclaw-session-import.js';
+import { getPrivacyMode } from './config.js';
 import { checkSetupHealth } from './doctor.js';
 import { createReadinessReport } from './readiness.js';
 import { createDemoDatabase } from './demo.js';
@@ -137,7 +138,7 @@ export function main(argv = process.argv.slice(2)) {
       console.error('Missing OpenClaw session jsonl path');
       return 1;
     }
-    const events = importOpenClawSessionFile(sessionPath);
+    const events = importOpenClawSessionFile(sessionPath, getPrivacyMode(dbPath));
     const store = new RunqStore(dbPath);
     for (const event of events) {
       store.appendEvent(event);

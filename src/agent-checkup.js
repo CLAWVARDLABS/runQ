@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 
 import { initAgent } from './init.js';
 import { RunqStore } from './store.js';
+import { getPrivacyMode } from './config.js';
 import {
   importClaudeCodeSessionFile,
   listClaudeCodeSessionFiles
@@ -58,7 +59,7 @@ function appendEvents(store, events) {
   return { inserted, skipped, sessionCount: sessionIds.size };
 }
 
-function importFilesWithProgress(store, files, importFn, onProgress) {
+function importFilesWithProgress(store, files, importFn, onProgress, privacyMode) {
   const stats = { inserted: 0, skipped: 0, sessionCount: 0 };
   for (const [index, file] of files.entries()) {
     onProgress?.({
@@ -70,7 +71,7 @@ function importFilesWithProgress(store, files, importFn, onProgress) {
       imported_sessions: stats.sessionCount
     });
     try {
-      const events = importFn(file.path);
+      const events = importFn(file.path, privacyMode);
       const result = appendEvents(store, events);
       stats.inserted += result.inserted;
       stats.skipped += result.skipped;
@@ -82,31 +83,31 @@ function importFilesWithProgress(store, files, importFn, onProgress) {
   return { files: files.length, ...stats };
 }
 
-async function checkupClaudeCode(store, homeDir, onProgress) {
+async function checkupClaudeCode(store, homeDir, onProgress, privacyMode) {
   const files = listClaudeCodeSessionFiles(homeDir);
   onProgress?.({ phase: 'files-listed', total: files.length });
-  return importFilesWithProgress(store, files, importClaudeCodeSessionFile, onProgress);
+  return importFilesWithProgress(store, files, importClaudeCodeSessionFile, onProgress, privacyMode);
 }
 
-async function checkupCodex(store, homeDir, onProgress) {
+async function checkupCodex(store, homeDir, onProgress, privacyMode) {
   const files = listCodexSessionFiles(homeDir);
   onProgress?.({ phase: 'files-listed', total: files.length });
-  return importFilesWithProgress(store, files, importCodexSessionFile, onProgress);
+  return importFilesWithProgress(store, files, importCodexSessionFile, onProgress, privacyMode);
 }
 
-async function checkupOpenClaw(store, homeDir, onProgress) {
+async function checkupOpenClaw(store, homeDir, onProgress, privacyMode) {
   const files = listOpenClawSessionFiles(homeDir);
   onProgress?.({ phase: 'files-listed', total: files.length });
-  return importFilesWithProgress(store, files, importOpenClawSessionFile, onProgress);
+  return importFilesWithProgress(store, files, importOpenClawSessionFile, onProgress, privacyMode);
 }
 
-async function checkupHermes(store, homeDir, onProgress) {
+async function checkupHermes(store, homeDir, onProgress, privacyMode) {
   if (!hermesStateAvailable(homeDir)) {
     onProgress?.({ phase: 'files-listed', total: 0 });
     return { files: 0, inserted: 0, skipped: 0, sessionCount: 0 };
   }
   onProgress?.({ phase: 'reading-hermes-db', message: 'Reading ~/.hermes/state.db' });
-  const { sessions, events } = importHermesState(homeDir);
+  const { sessions, events } = importHermesState(homeDir, privacyMode);
   onProgress?.({ phase: 'files-listed', total: sessions });
   // Hermes events come pre-grouped per session; we still report progress so
   // the UI can show the import phase moving forward.
@@ -204,6 +205,9 @@ export async function runAgentCheckup(agentId, {
   // Skipping this would mean the user is on a "static" backfill: the
   // historical data we import now would never grow as new sessions happen.
   const resolvedDbPath = resolve(dbPath);
+  // Honor the privacy toggle (.runq/config.json) for the backfill import too,
+  // so a checkup run captures the same shape of data as live hooks would.
+  const privacyMode = getPrivacyMode(dbPath);
   if (shouldInstallHooks) {
     onProgress?.({ phase: 'install-hooks', message: `Wiring RunQ hooks into ${agentId}` });
   }
@@ -224,10 +228,10 @@ export async function runAgentCheckup(agentId, {
   const store = new RunqStore(dbPath);
   let result;
   try {
-    if (agentId === 'claude_code') result = await checkupClaudeCode(store, homeDir, onProgress);
-    else if (agentId === 'codex') result = await checkupCodex(store, homeDir, onProgress);
-    else if (agentId === 'openclaw') result = await checkupOpenClaw(store, homeDir, onProgress);
-    else if (agentId === 'hermes') result = await checkupHermes(store, homeDir, onProgress);
+    if (agentId === 'claude_code') result = await checkupClaudeCode(store, homeDir, onProgress, privacyMode);
+    else if (agentId === 'codex') result = await checkupCodex(store, homeDir, onProgress, privacyMode);
+    else if (agentId === 'openclaw') result = await checkupOpenClaw(store, homeDir, onProgress, privacyMode);
+    else if (agentId === 'hermes') result = await checkupHermes(store, homeDir, onProgress, privacyMode);
   } finally {
     store.close();
   }

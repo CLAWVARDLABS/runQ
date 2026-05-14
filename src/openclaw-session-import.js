@@ -24,7 +24,7 @@ function parseJsonl(path) {
     .map((line) => JSON.parse(line));
 }
 
-export function openClawSessionRowsToRunQEvents(rows) {
+export function openClawSessionRowsToRunQEvents(rows, privacyMode = 'on') {
   const session = rows.find((row) => row.type === 'session');
   if (!session?.id) {
     throw new Error('OpenClaw session jsonl is missing a session row with id');
@@ -180,7 +180,7 @@ export function openClawSessionRowsToRunQEvents(rows) {
     now: endedAt
   });
 
-  const events = inputs.flatMap((input) => normalizeOpenClawEvent(input, { now: input.now }));
+  const events = inputs.flatMap((input) => normalizeOpenClawEvent(input, { now: input.now, privacyMode }));
   events.push({
     runq_version: '0.1.0',
     event_id: eventId([session.id, session.id, 'satisfaction.recorded', endedAt]),
@@ -218,6 +218,6 @@ export function openClawSessionRowsToRunQEvents(rows) {
   return events;
 }
 
-export function importOpenClawSessionFile(path) {
-  return openClawSessionRowsToRunQEvents(parseJsonl(path));
+export function importOpenClawSessionFile(path, privacyMode = 'on') {
+  return openClawSessionRowsToRunQEvents(parseJsonl(path), privacyMode);
 }

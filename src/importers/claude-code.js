@@ -1,7 +1,16 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { extname, join } from 'node:path';
 
-import { binaryFromCommand, eventId, hash, isVerificationCommand, textSummary } from '../normalize-utils.js';
+import {
+  binaryFromCommand,
+  eventId,
+  hash,
+  isVerificationCommand,
+  privacyLevelFor,
+  privacyRedactedFor,
+  rawFields,
+  textSummary
+} from '../normalize-utils.js';
 import { scoreRun } from '../scoring.js';
 import { linkAgentEventParents } from '../event-tree.js';
 
@@ -48,7 +57,7 @@ function isFileMutationTool(name) {
   return ['Edit', 'MultiEdit', 'Write', 'NotebookEdit'].includes(String(name ?? ''));
 }
 
-function commandPayload({ command, cwd, exitCode, output, toolUseId }) {
+function commandPayload({ command, cwd, exitCode, output, toolUseId }, privacyMode) {
   const verification = isVerificationCommand(command);
   return {
     command_id: toolUseId ?? hash(command),
@@ -60,11 +69,12 @@ function commandPayload({ command, cwd, exitCode, output, toolUseId }) {
     stdout_hash: output === undefined ? undefined : hash(output),
     stderr_hash: undefined,
     is_verification: verification,
-    verification_kind: verification ? 'command' : undefined
+    verification_kind: verification ? 'command' : undefined,
+    ...rawFields(privacyMode, { command, cwd, output })
   };
 }
 
-function fileChangePayload(toolUse) {
+function fileChangePayload(toolUse, privacyMode) {
   const input = toolUse.input ?? {};
   const filePath = input.file_path ?? input.path ?? input.notebook_path ?? '';
   const extension = extname(filePath).replace(/^\./, '');
@@ -72,7 +82,8 @@ function fileChangePayload(toolUse) {
     path_hash: hash(filePath),
     file_extension: extension || undefined,
     change_kind: toolUse.name === 'Write' ? 'written' : 'modified',
-    tool_name: toolUse.name
+    tool_name: toolUse.name,
+    ...rawFields(privacyMode, { file_path: filePath, tool_input: input })
   };
 }
 
@@ -85,7 +96,7 @@ function toolResultContent(block) {
     .join('\n');
 }
 
-function makeEvent({ sessionId, type, timestamp, payload, parts }) {
+function makeEvent({ sessionId, type, timestamp, payload, parts, privacyMode = 'on' }) {
   return {
     runq_version: RUNQ_VERSION,
     event_id: eventId(parts ?? [sessionId, type, timestamp]),
@@ -96,12 +107,15 @@ function makeEvent({ sessionId, type, timestamp, payload, parts }) {
     run_id: sessionId,
     framework: FRAMEWORK,
     source: SOURCE,
-    privacy: { level: 'metadata', redacted: true },
+    privacy: {
+      level: privacyLevelFor(privacyMode, 'metadata'),
+      redacted: privacyRedactedFor(privacyMode)
+    },
     payload
   };
 }
 
-export function claudeCodeSessionRowsToEvents(rows, fallbackSessionId = null) {
+export function claudeCodeSessionRowsToEvents(rows, fallbackSessionId = null, privacyMode = 'on') {
   const rowsWithTs = rows.filter((row) => row && row.timestamp);
   const sessionId =
     rows.find((row) => row?.sessionId)?.sessionId ??
@@ -121,6 +135,7 @@ export function claudeCodeSessionRowsToEvents(rows, fallbackSessionId = null) {
 
   events.push(makeEvent({
     sessionId,
+    privacyMode,
     type: 'session.started',
     timestamp: startedAt,
     parts: [sessionId, 'session.started', startedAt],
@@ -146,13 +161,15 @@ export function claudeCodeSessionRowsToEvents(rows, fallbackSessionId = null) {
     const promptId = row.uuid ?? row.promptId ?? `${row.timestamp}:${promptText.length}`;
     events.push(makeEvent({
       sessionId,
+      privacyMode,
       type: 'user.prompt.submitted',
       timestamp: row.timestamp,
       parts: [sessionId, 'user.prompt.submitted', promptId],
       payload: {
         prompt_length: promptText.length,
         prompt_summary: textSummary(promptText, 160),
-        prompt_hash: hash(promptText)
+        prompt_hash: hash(promptText),
+        ...rawFields(privacyMode, { prompt: promptText })
       }
     }));
   }
@@ -174,6 +191,7 @@ export function claudeCodeSessionRowsToEvents(rows, fallbackSessionId = null) {
     const startTs = record.timestamp;
     events.push(makeEvent({
       sessionId,
+      privacyMode,
       type: 'model.call.started',
       timestamp: startTs,
       parts: [sessionId, 'model.call.started', msgId],
@@ -185,6 +203,7 @@ export function claudeCodeSessionRowsToEvents(rows, fallbackSessionId = null) {
     }));
     events.push(makeEvent({
       sessionId,
+      privacyMode,
       type: 'model.call.ended',
       timestamp: startTs,
       parts: [sessionId, 'model.call.ended', msgId],
@@ -204,12 +223,14 @@ export function claudeCodeSessionRowsToEvents(rows, fallbackSessionId = null) {
       toolUseIndex.set(block.id, { name: block.name, input: block.input, timestamp: startTs });
       events.push(makeEvent({
         sessionId,
+        privacyMode,
         type: 'tool.call.started',
         timestamp: startTs,
         parts: [sessionId, 'tool.call.started', block.id],
         payload: {
           tool_name: block.name,
-          tool_call_id: block.id
+          tool_call_id: block.id,
+          ...rawFields(privacyMode, { tool_input: block.input })
         }
       }));
       if (block.name === 'Bash') {
@@ -218,12 +239,13 @@ export function claudeCodeSessionRowsToEvents(rows, fallbackSessionId = null) {
           command,
           cwd,
           toolUseId: block.id
-        });
+        }, privacyMode);
         delete payload.exit_code;
         delete payload.stdout_hash;
         delete payload.stderr_hash;
         events.push(makeEvent({
           sessionId,
+          privacyMode,
           type: 'command.started',
           timestamp: startTs,
           parts: [sessionId, 'command.started', block.id],
@@ -233,10 +255,11 @@ export function claudeCodeSessionRowsToEvents(rows, fallbackSessionId = null) {
       if (isFileMutationTool(block.name)) {
         events.push(makeEvent({
           sessionId,
+          privacyMode,
           type: 'file.changed',
           timestamp: startTs,
           parts: [sessionId, 'file.changed', block.id],
-          payload: fileChangePayload(block)
+          payload: fileChangePayload(block, privacyMode)
         }));
       }
     }
@@ -251,22 +274,25 @@ export function claudeCodeSessionRowsToEvents(rows, fallbackSessionId = null) {
       const original = toolUseIndex.get(block.tool_use_id);
       if (!original) continue;
       const isError = Boolean(block.is_error);
+      const output = toolResultContent(block);
       events.push(makeEvent({
         sessionId,
+        privacyMode,
         type: 'tool.call.ended',
         timestamp: row.timestamp ?? original.timestamp,
         parts: [sessionId, 'tool.call.ended', block.tool_use_id],
         payload: {
           tool_name: original.name,
           tool_call_id: block.tool_use_id,
-          status: isError ? 'failed' : 'completed'
+          status: isError ? 'failed' : 'completed',
+          ...rawFields(privacyMode, { tool_output: output })
         }
       }));
       if (original.name === 'Bash') {
         const command = original.input?.command ?? '';
-        const output = toolResultContent(block);
         events.push(makeEvent({
           sessionId,
+          privacyMode,
           type: 'command.ended',
           timestamp: row.timestamp ?? original.timestamp,
           parts: [sessionId, 'command.ended', block.tool_use_id],
@@ -276,7 +302,7 @@ export function claudeCodeSessionRowsToEvents(rows, fallbackSessionId = null) {
             exitCode: isError ? 1 : 0,
             output,
             toolUseId: block.tool_use_id
-          })
+          }, privacyMode)
         }));
       }
     }
@@ -284,6 +310,7 @@ export function claudeCodeSessionRowsToEvents(rows, fallbackSessionId = null) {
 
   events.push(makeEvent({
     sessionId,
+    privacyMode,
     type: 'session.ended',
     timestamp: endedAt,
     parts: [sessionId, 'session.ended', endedAt],
@@ -295,6 +322,7 @@ export function claudeCodeSessionRowsToEvents(rows, fallbackSessionId = null) {
 
   events.push(makeEvent({
     sessionId,
+    privacyMode,
     type: 'outcome.scored',
     timestamp: endedAt,
     parts: [sessionId, 'outcome.scored', endedAt],
@@ -305,8 +333,8 @@ export function claudeCodeSessionRowsToEvents(rows, fallbackSessionId = null) {
   return events;
 }
 
-export function importClaudeCodeSessionFile(path) {
-  return claudeCodeSessionRowsToEvents(parseJsonl(path));
+export function importClaudeCodeSessionFile(path, privacyMode = 'on') {
+  return claudeCodeSessionRowsToEvents(parseJsonl(path), null, privacyMode);
 }
 
 export function listClaudeCodeSessionFiles(homeDir = process.env.HOME) {

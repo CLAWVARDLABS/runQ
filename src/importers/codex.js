@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { eventId, hash, textSummary } from '../normalize-utils.js';
+import { eventId, hash, privacyLevelFor, privacyRedactedFor, rawFields, textSummary } from '../normalize-utils.js';
 import { scoreRun } from '../scoring.js';
 import { linkAgentEventParents } from '../event-tree.js';
 
@@ -30,7 +30,7 @@ function parseJsonl(path) {
     .filter(Boolean);
 }
 
-function makeEvent({ sessionId, type, timestamp, payload, parts }) {
+function makeEvent({ sessionId, type, timestamp, payload, parts, privacyMode = 'on' }) {
   return {
     runq_version: RUNQ_VERSION,
     event_id: eventId(parts ?? [sessionId, type, timestamp]),
@@ -41,7 +41,10 @@ function makeEvent({ sessionId, type, timestamp, payload, parts }) {
     run_id: sessionId,
     framework: FRAMEWORK,
     source: SOURCE,
-    privacy: { level: 'metadata', redacted: true },
+    privacy: {
+      level: privacyLevelFor(privacyMode, 'metadata'),
+      redacted: privacyRedactedFor(privacyMode)
+    },
     payload
   };
 }
@@ -54,7 +57,7 @@ function textOfMessage(payload) {
     .join('\n');
 }
 
-export function codexRolloutRowsToEvents(rows, fallbackSessionId = null) {
+export function codexRolloutRowsToEvents(rows, fallbackSessionId = null, privacyMode = 'on') {
   const sessionMeta = rows.find((row) => row?.type === 'session_meta');
   const sessionId =
     sessionMeta?.payload?.id ??
@@ -74,6 +77,7 @@ export function codexRolloutRowsToEvents(rows, fallbackSessionId = null) {
 
   events.push(makeEvent({
     sessionId,
+    privacyMode,
     type: 'session.started',
     timestamp: startedAt,
     parts: [sessionId, 'session.started', startedAt],
@@ -99,13 +103,15 @@ export function codexRolloutRowsToEvents(rows, fallbackSessionId = null) {
       if (!text.trim()) continue;
       events.push(makeEvent({
         sessionId,
+        privacyMode,
         type: 'user.prompt.submitted',
         timestamp: row.timestamp,
         parts: [sessionId, 'user.prompt.submitted', `${row.timestamp}:${index}`],
         payload: {
           prompt_length: text.length,
           prompt_summary: textSummary(text, 160),
-          prompt_hash: hash(text)
+          prompt_hash: hash(text),
+          ...rawFields(privacyMode, { prompt: text })
         }
       }));
     }
@@ -122,13 +128,15 @@ export function codexRolloutRowsToEvents(rows, fallbackSessionId = null) {
       if (text.trim()) {
         events.push(makeEvent({
           sessionId,
+          privacyMode,
           type: 'user.prompt.submitted',
           timestamp: firstUser.timestamp,
           parts: [sessionId, 'user.prompt.submitted', firstUser.timestamp],
           payload: {
             prompt_length: text.length,
             prompt_summary: textSummary(text, 160),
-            prompt_hash: hash(text)
+            prompt_hash: hash(text),
+            ...rawFields(privacyMode, { prompt: text })
           }
         }));
       }
@@ -147,6 +155,7 @@ export function codexRolloutRowsToEvents(rows, fallbackSessionId = null) {
       turnCount += 1;
       events.push(makeEvent({
         sessionId,
+        privacyMode,
         type: 'model.call.started',
         timestamp: row.timestamp,
         parts: [sessionId, 'model.call.started', row.payload?.turn_id ?? `${row.timestamp}:${turnCount}`],
@@ -160,6 +169,7 @@ export function codexRolloutRowsToEvents(rows, fallbackSessionId = null) {
     if (row?.type === 'event_msg' && row.payload?.type === 'token_count') {
       events.push(makeEvent({
         sessionId,
+        privacyMode,
         type: 'model.call.ended',
         timestamp: row.timestamp,
         parts: [sessionId, 'model.call.ended', `${row.timestamp}:${turnCount}`],
@@ -184,12 +194,14 @@ export function codexRolloutRowsToEvents(rows, fallbackSessionId = null) {
       pendingCalls.set(p.call_id, { name: p.name, timestamp: row.timestamp });
       events.push(makeEvent({
         sessionId,
+        privacyMode,
         type: 'tool.call.started',
         timestamp: row.timestamp,
         parts: [sessionId, 'tool.call.started', p.call_id],
         payload: {
           tool_name: p.name,
-          tool_call_id: p.call_id
+          tool_call_id: p.call_id,
+          ...rawFields(privacyMode, { arguments: p.arguments })
         }
       }));
     } else if (p?.type === 'function_call_output' && p?.call_id) {
@@ -199,13 +211,15 @@ export function codexRolloutRowsToEvents(rows, fallbackSessionId = null) {
         : 'completed';
       events.push(makeEvent({
         sessionId,
+        privacyMode,
         type: 'tool.call.ended',
         timestamp: row.timestamp,
         parts: [sessionId, 'tool.call.ended', p.call_id],
         payload: {
           tool_name: original?.name ?? null,
           tool_call_id: p.call_id,
-          status
+          status,
+          ...rawFields(privacyMode, { output: p.output })
         }
       }));
     }
@@ -213,6 +227,7 @@ export function codexRolloutRowsToEvents(rows, fallbackSessionId = null) {
 
   events.push(makeEvent({
     sessionId,
+    privacyMode,
     type: 'session.ended',
     timestamp: endedAt,
     parts: [sessionId, 'session.ended', endedAt],
@@ -224,6 +239,7 @@ export function codexRolloutRowsToEvents(rows, fallbackSessionId = null) {
 
   events.push(makeEvent({
     sessionId,
+    privacyMode,
     type: 'outcome.scored',
     timestamp: endedAt,
     parts: [sessionId, 'outcome.scored', endedAt],
@@ -234,8 +250,8 @@ export function codexRolloutRowsToEvents(rows, fallbackSessionId = null) {
   return events;
 }
 
-export function importCodexSessionFile(path) {
-  return codexRolloutRowsToEvents(parseJsonl(path));
+export function importCodexSessionFile(path, privacyMode = 'on') {
+  return codexRolloutRowsToEvents(parseJsonl(path), null, privacyMode);
 }
 
 export function listCodexSessionFiles(homeDir = process.env.HOME) {

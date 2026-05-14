@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-import { eventId, hash, textSummary } from '../normalize-utils.js';
+import { eventId, hash, privacyLevelFor, privacyRedactedFor, rawFields, textSummary } from '../normalize-utils.js';
 import { scoreRun } from '../scoring.js';
 import { linkAgentEventParents } from '../event-tree.js';
 
@@ -26,7 +26,7 @@ function toIso(unixSeconds) {
   return new Date(Number(unixSeconds) * 1000).toISOString();
 }
 
-function makeEvent({ sessionId, type, timestamp, payload, parts }) {
+function makeEvent({ sessionId, type, timestamp, payload, parts, privacyMode = 'on' }) {
   return {
     runq_version: RUNQ_VERSION,
     event_id: eventId(parts ?? [sessionId, type, timestamp]),
@@ -37,7 +37,10 @@ function makeEvent({ sessionId, type, timestamp, payload, parts }) {
     run_id: sessionId,
     framework: FRAMEWORK,
     source: SOURCE,
-    privacy: { level: 'metadata', redacted: true },
+    privacy: {
+      level: privacyLevelFor(privacyMode, 'metadata'),
+      redacted: privacyRedactedFor(privacyMode)
+    },
     payload
   };
 }
@@ -52,7 +55,7 @@ function safeParseToolCalls(json) {
   }
 }
 
-export function hermesStateRowsToEvents(session, messages) {
+export function hermesStateRowsToEvents(session, messages, privacyMode = 'on') {
   if (!session?.id || !session?.started_at) return [];
   const sessionId = session.id;
   const startedAt = toIso(session.started_at);
@@ -64,6 +67,7 @@ export function hermesStateRowsToEvents(session, messages) {
 
   events.push(makeEvent({
     sessionId,
+    privacyMode,
     type: 'session.started',
     timestamp: startedAt,
     parts: [sessionId, 'session.started', startedAt],
@@ -84,13 +88,15 @@ export function hermesStateRowsToEvents(session, messages) {
     if (!text.trim()) continue;
     events.push(makeEvent({
       sessionId,
+      privacyMode,
       type: 'user.prompt.submitted',
       timestamp: toIso(row.timestamp) ?? startedAt,
       parts: [sessionId, 'user.prompt.submitted', row.id ?? row.timestamp],
       payload: {
         prompt_length: text.length,
         prompt_summary: textSummary(text, 160),
-        prompt_hash: hash(text)
+        prompt_hash: hash(text),
+        ...rawFields(privacyMode, { prompt: text })
       }
     }));
   }
@@ -101,6 +107,7 @@ export function hermesStateRowsToEvents(session, messages) {
     const ts = toIso(row.timestamp) ?? startedAt;
     events.push(makeEvent({
       sessionId,
+      privacyMode,
       type: 'model.call.started',
       timestamp: ts,
       parts: [sessionId, 'model.call.started', row.id ?? `${ts}:start`],
@@ -108,6 +115,7 @@ export function hermesStateRowsToEvents(session, messages) {
     }));
     events.push(makeEvent({
       sessionId,
+      privacyMode,
       type: 'model.call.ended',
       timestamp: ts,
       parts: [sessionId, 'model.call.ended', row.id ?? `${ts}:end`],
@@ -115,7 +123,8 @@ export function hermesStateRowsToEvents(session, messages) {
         provider: session.billing_provider ?? null,
         model: session.model ?? null,
         output_tokens: Number(row.token_count ?? 0),
-        finish_reason: row.finish_reason ?? null
+        finish_reason: row.finish_reason ?? null,
+        ...rawFields(privacyMode, { assistant_content: row.content })
       }
     }));
     for (const call of safeParseToolCalls(row.tool_calls)) {
@@ -123,10 +132,15 @@ export function hermesStateRowsToEvents(session, messages) {
       const toolName = call?.function?.name ?? call?.name ?? 'unknown';
       events.push(makeEvent({
         sessionId,
+        privacyMode,
         type: 'tool.call.started',
         timestamp: ts,
         parts: [sessionId, 'tool.call.started', callId],
-        payload: { tool_name: toolName, tool_call_id: callId }
+        payload: {
+          tool_name: toolName,
+          tool_call_id: callId,
+          ...rawFields(privacyMode, { arguments: call?.function?.arguments ?? call?.arguments })
+        }
       }));
     }
   }
@@ -137,19 +151,22 @@ export function hermesStateRowsToEvents(session, messages) {
     const ts = toIso(row.timestamp) ?? endedAt;
     events.push(makeEvent({
       sessionId,
+      privacyMode,
       type: 'tool.call.ended',
       timestamp: ts,
       parts: [sessionId, 'tool.call.ended', row.tool_call_id],
       payload: {
         tool_name: row.tool_name ?? null,
         tool_call_id: row.tool_call_id,
-        status: 'completed'
+        status: 'completed',
+        ...rawFields(privacyMode, { output: row.content })
       }
     }));
   }
 
   events.push(makeEvent({
     sessionId,
+    privacyMode,
     type: 'session.ended',
     timestamp: endedAt,
     parts: [sessionId, 'session.ended', endedAt],
@@ -166,6 +183,7 @@ export function hermesStateRowsToEvents(session, messages) {
 
   events.push(makeEvent({
     sessionId,
+    privacyMode,
     type: 'outcome.scored',
     timestamp: endedAt,
     parts: [sessionId, 'outcome.scored', endedAt],
@@ -184,7 +202,7 @@ export function hermesStateAvailable(homeDir = process.env.HOME) {
   return existsSync(hermesStatePath(homeDir));
 }
 
-export function importHermesState(homeDir = process.env.HOME) {
+export function importHermesState(homeDir = process.env.HOME, privacyMode = 'on') {
   const dbPath = hermesStatePath(homeDir);
   if (!existsSync(dbPath)) return { sessions: 0, events: [] };
 
@@ -198,7 +216,7 @@ export function importHermesState(homeDir = process.env.HOME) {
       const messages = db.prepare(
         'SELECT * FROM messages WHERE session_id = ? ORDER BY timestamp ASC'
       ).all(session.id);
-      events.push(...hermesStateRowsToEvents(session, messages));
+      events.push(...hermesStateRowsToEvents(session, messages, privacyMode));
     }
     return { sessions: sessions.length, events };
   } finally {

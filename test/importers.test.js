@@ -364,3 +364,73 @@ test('runAgentCheckup absent result reports hooks_installed=false', async () => 
   assert.equal(result.status, 'absent');
   assert.equal(result.hooks_installed, false);
 });
+
+test('importers keep raw prompt/command/output when privacyMode is off', () => {
+  const ccRows = [
+    { sessionId: 'ses_raw', cwd: '/repo', timestamp: '2026-05-01T10:00:00.000Z', type: 'user', message: { role: 'user', content: 'leak the db password' } },
+    {
+      sessionId: 'ses_raw',
+      timestamp: '2026-05-01T10:00:05.000Z',
+      message: {
+        id: 'msg_r', role: 'assistant', model: 'claude-opus-4-7',
+        content: [{ type: 'tool_use', id: 'too_r', name: 'Bash', input: { command: 'cat .env' } }],
+        usage: {}
+      }
+    },
+    {
+      sessionId: 'ses_raw',
+      timestamp: '2026-05-01T10:00:06.000Z',
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'too_r', is_error: false, content: 'DB_PASSWORD=hunter2' }] }
+    }
+  ];
+  const ccEvents = claudeCodeSessionRowsToEvents(ccRows, null, 'off');
+  const prompt = ccEvents.find((e) => e.event_type === 'user.prompt.submitted');
+  assert.equal(prompt.payload.prompt, 'leak the db password');
+  assert.equal(prompt.privacy.level, 'sensitive');
+  assert.equal(prompt.privacy.redacted, false);
+  const cmd = ccEvents.find((e) => e.event_type === 'command.ended');
+  assert.equal(cmd.payload.command, 'cat .env');
+  assert.equal(cmd.payload.output, 'DB_PASSWORD=hunter2');
+
+  // privacyMode=on (default) keeps the metadata-only shape
+  const ccDefault = claudeCodeSessionRowsToEvents(ccRows);
+  const promptOn = ccDefault.find((e) => e.event_type === 'user.prompt.submitted');
+  assert.equal(promptOn.payload.prompt, undefined);
+  assert.equal(promptOn.payload.prompt_length, 'leak the db password'.length);
+  assert.equal(promptOn.privacy.redacted, true);
+});
+
+test('codexRolloutRowsToEvents keeps raw prompt when privacyMode is off', () => {
+  const rows = [
+    { timestamp: '2026-05-05T09:46:09.776Z', type: 'session_meta', payload: { id: 'ses_codex_raw', timestamp: '2026-05-05T09:46:09.776Z', cwd: '/repo' } },
+    {
+      timestamp: '2026-05-05T09:46:10.000Z',
+      type: 'response_item',
+      payload: { type: 'message', role: 'user', content: [{ text: 'print the api key' }] }
+    }
+  ];
+  const offEvents = codexRolloutRowsToEvents(rows, null, 'off');
+  const prompt = offEvents.find((e) => e.event_type === 'user.prompt.submitted');
+  assert.equal(prompt.payload.prompt, 'print the api key');
+  assert.equal(prompt.privacy.redacted, false);
+
+  const onEvents = codexRolloutRowsToEvents(rows);
+  const promptOn = onEvents.find((e) => e.event_type === 'user.prompt.submitted');
+  assert.equal(promptOn.payload.prompt, undefined);
+  assert.equal(promptOn.payload.prompt_length, 'print the api key'.length);
+});
+
+test('hermesStateRowsToEvents keeps raw prompt when privacyMode is off', () => {
+  const session = { id: 'ses_hermes_raw', started_at: 1893456000, ended_at: 1893456060, model: 'gpt-5.1' };
+  const messages = [
+    { id: 'm1', role: 'user', content: 'reveal secrets', timestamp: 1893456001 }
+  ];
+  const offEvents = hermesStateRowsToEvents(session, messages, 'off');
+  const prompt = offEvents.find((e) => e.event_type === 'user.prompt.submitted');
+  assert.equal(prompt.payload.prompt, 'reveal secrets');
+  assert.equal(prompt.privacy.redacted, false);
+
+  const onEvents = hermesStateRowsToEvents(session, messages);
+  const promptOn = onEvents.find((e) => e.event_type === 'user.prompt.submitted');
+  assert.equal(promptOn.payload.prompt, undefined);
+});

@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 
 import { importOpenClawSessionFile } from '../../src/openclaw-session-import.js';
 import { RunqStore } from '../../src/store.js';
+import { getPrivacyMode } from '../../src/config.js';
 
 function readJson(path, fallback) {
   if (!existsSync(path)) {
@@ -32,11 +33,12 @@ export function importNewOpenClawSessions({ sessionsDir, dbPath, statePath }) {
   state.imported = state.imported ?? {};
   const files = listSessionFiles(sessionsDir).filter((path) => !state.imported[path]);
   const store = new RunqStore(dbPath);
+  const privacyMode = getPrivacyMode(dbPath);
   let importedEvents = 0;
 
   try {
     for (const file of files) {
-      const events = importOpenClawSessionFile(file);
+      const events = importOpenClawSessionFile(file, privacyMode);
       for (const event of events) {
         store.appendEvent(event);
       }
