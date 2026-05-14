@@ -25,7 +25,7 @@ test('coding task harness records a real failing-then-passing bugfix run', () =>
   assert.equal(existsSync(join(repoDir, 'src/cart.js')), true);
   assert.equal(result.commands[0].status, 1);
   assert.equal(result.commands[1].status, 0);
-  assert.equal(result.quality.outcome_confidence, 0.9);
+  assert.equal(result.quality.outcome_confidence, 0.96);
   assert.equal(result.quality.verification_coverage, 1);
   assert.equal(result.quality.reasons.includes('verification_passed_after_changes'), true);
   assert.equal(result.satisfaction.label, 'accepted');
@@ -44,7 +44,7 @@ test('coding task harness records a real failing-then-passing bugfix run', () =>
 
   const sessions = getRunInboxSessions(dbPath);
   assert.equal(sessions.length, 1);
-  assert.equal(sessions[0].quality.outcome_confidence, 0.9);
+  assert.equal(sessions[0].quality.outcome_confidence, 0.96);
   assert.equal(sessions[0].satisfaction.label, 'accepted');
 
   const readiness = createReadinessReport({ dbPath });
@@ -70,5 +70,5 @@ test('coding task harness CLI prints a JSON quality report', () => {
   const report = JSON.parse(result.stdout);
   assert.equal(report.session_id, 'coding-task-harness-bugfix');
   assert.equal(report.commands.map((command) => command.status).join(','), '1,0');
-  assert.equal(report.quality.outcome_confidence, 0.9);
+  assert.equal(report.quality.outcome_confidence, 0.96);
 });

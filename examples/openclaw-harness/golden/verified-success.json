@@ -17,8 +17,8 @@
       "satisfaction.recorded"
     ],
     "quality": {
-      "outcome_confidence": 0.9,
-      "trust_score": 90,
+      "outcome_confidence": 0.96,
+      "trust_score": 96,
       "trust_breakdown": {
         "evidence_strength": {
           "label": "Evidence Strength",
@@ -54,7 +54,7 @@
         },
         "cost_discipline": {
           "label": "Cost Discipline",
-          "score": 50,
+          "score": 65,
           "reasons": [
             "cost_metadata_observed"
           ]
@@ -71,11 +71,37 @@
       "rework_risk": 0.1,
       "permission_friction": 0,
       "loop_risk": 0,
-      "cost_efficiency": 0.5,
-      "score_version": "0.2.0",
+      "cost_efficiency": 0.65,
+      "score_version": "0.3.0",
       "reasons": [
         "verification_passed_after_changes",
         "satisfaction_accepted"
+      ],
+      "score_contributions": [
+        {
+          "reason": "evidence_breadth",
+          "impact": 11
+        },
+        {
+          "reason": "file_change_evidence",
+          "impact": 5
+        },
+        {
+          "reason": "command_success_rate",
+          "impact": 6
+        },
+        {
+          "reason": "verification_passed_after_changes",
+          "impact": 23
+        },
+        {
+          "reason": "cost_discipline",
+          "impact": 2
+        },
+        {
+          "reason": "satisfaction_accepted",
+          "impact": 18
+        }
       ]
     },
     "recommendation_categories": []

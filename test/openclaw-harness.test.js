@@ -24,7 +24,7 @@ test('OpenClaw harness records a verified successful coding-agent run', () => {
   assert.equal(result.session.framework, 'openclaw');
   assert.equal(result.events.some((event) => event.event_type === 'satisfaction.recorded'), true);
   assert.equal(result.events.some((event) => event.event_type === 'file.changed'), true);
-  assert.equal(result.quality.outcome_confidence, 0.9);
+  assert.equal(result.quality.outcome_confidence, 0.96);
   assert.equal(result.quality.reasons.includes('verification_passed_after_changes'), true);
   assert.equal(result.recommendations.length, 0);
   assert.equal(result.satisfaction.label, 'accepted');
@@ -40,7 +40,7 @@ test('OpenClaw harness records repeated failed verification and emits product re
 
   assert.equal(result.session.session_id, 'openclaw-harness-failure');
   assert.equal(result.events.some((event) => event.event_type === 'satisfaction.recorded'), true);
-  assert.equal(result.quality.outcome_confidence, 0.15);
+  assert.equal(result.quality.outcome_confidence, 0.07);
   assert.equal(result.quality.loop_risk, 0.8);
   assert.equal(result.quality.reasons.includes('verification_failed_at_end'), true);
   assert.equal(result.quality.reasons.includes('repeated_command_failure'), true);
@@ -66,7 +66,7 @@ test('OpenClaw harness returns the scenario session when the database already co
   });
 
   assert.equal(result.session.session_id, 'openclaw-harness-success');
-  assert.equal(result.quality.outcome_confidence, 0.9);
+  assert.equal(result.quality.outcome_confidence, 0.96);
   assert.equal(result.satisfaction.label, 'accepted');
 });
 

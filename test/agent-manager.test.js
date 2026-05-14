@@ -65,5 +65,5 @@ test('runAgentManager local mode produces multiple agent sessions and ingests th
     'accepted'
   ]);
   assert.equal(sessions.some((session) => session.quality.loop_risk === 0.8), true);
-  assert.equal(sessions.some((session) => session.quality.outcome_confidence === 0.9), true);
+  assert.equal(sessions.some((session) => session.quality.trust_score >= 90), true);
 });

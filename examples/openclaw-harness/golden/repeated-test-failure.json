@@ -17,8 +17,8 @@
       "satisfaction.recorded"
     ],
     "quality": {
-      "outcome_confidence": 0.15,
-      "trust_score": 15,
+      "outcome_confidence": 0.07,
+      "trust_score": 7,
       "trust_breakdown": {
         "evidence_strength": {
           "label": "Evidence Strength",
@@ -77,11 +77,37 @@
       "permission_friction": 0,
       "loop_risk": 0.8,
       "cost_efficiency": 0.5,
-      "score_version": "0.2.0",
+      "score_version": "0.3.0",
       "reasons": [
         "verification_failed_at_end",
         "repeated_command_failure",
         "satisfaction_abandoned"
+      ],
+      "score_contributions": [
+        {
+          "reason": "evidence_breadth",
+          "impact": 9
+        },
+        {
+          "reason": "file_change_evidence",
+          "impact": 5
+        },
+        {
+          "reason": "command_failure_rate",
+          "impact": -12
+        },
+        {
+          "reason": "verification_failed_at_end",
+          "impact": -35
+        },
+        {
+          "reason": "repeated_command_failure",
+          "impact": -25
+        },
+        {
+          "reason": "satisfaction_abandoned",
+          "impact": -40
+        }
       ]
     },
     "recommendation_categories": [

@@ -25,6 +25,9 @@ function event(eventType, payload = {}, timestamp = '2026-05-02T10:00:00.000Z') 
 test('scoreRun gives high confidence when verification passes after file changes', () => {
   const score = scoreRun([
     event('session.started'),
+    event('user.prompt.submitted', { prompt_length: 35 }),
+    event('model.call.ended', { total_tokens: 1200 }),
+    event('tool.call.ended', { tool_name: 'Edit', status: 'ok' }),
     event('file.changed', { lines_added: 12, lines_removed: 3 }),
     event('command.ended', {
       binary: 'npm',
@@ -35,11 +38,14 @@ test('scoreRun gives high confidence when verification passes after file changes
     event('session.ended', { ended_reason: 'completed' })
   ]);
 
-  assert.equal(score.outcome_confidence, 0.9);
+  assert.equal(score.outcome_confidence, 0.88);
   assert.equal(score.verification_coverage, 1);
-  assert.equal(score.rework_risk, 0.1);
+  assert.equal(score.rework_risk < 0.2, true);
   assert.equal(score.reasons.includes('verification_passed_after_changes'), true);
-  assert.equal(score.trust_score, 90);
+  assert.equal(score.trust_score, 88);
+  assert.notEqual(score.trust_score % 5, 0);
+  assert.equal(score.score_contributions.some((item) => item.reason === 'evidence_breadth' && item.impact > 0), true);
+  assert.equal(score.score_contributions.some((item) => item.reason === 'verification_passed_after_changes' && item.impact > 0), true);
   assert.equal(score.trust_breakdown.verification_strength.score, 100);
   assert.equal(score.trust_breakdown.execution_quality.score >= 80, true);
   assert.equal(score.trust_breakdown.risk_exposure.score <= 20, true);
@@ -57,11 +63,12 @@ test('scoreRun lowers confidence when tests fail at session end', () => {
     event('session.ended', { ended_reason: 'completed' })
   ]);
 
-  assert.equal(score.outcome_confidence, 0.2);
+  assert.equal(score.outcome_confidence <= 0.25, true);
   assert.equal(score.verification_coverage, 0.4);
-  assert.equal(score.rework_risk, 0.8);
+  assert.equal(score.rework_risk >= 0.75, true);
   assert.equal(score.reasons.includes('verification_failed_at_end'), true);
-  assert.equal(score.trust_score <= 35, true);
+  assert.equal(score.trust_score <= 30, true);
+  assert.equal(score.score_contributions.some((item) => item.reason === 'verification_failed_at_end' && item.impact < 0), true);
   assert.equal(score.trust_breakdown.verification_strength.score <= 45, true);
   assert.equal(score.trust_breakdown.execution_quality.score <= 45, true);
   assert.equal(score.trust_breakdown.risk_exposure.score >= 65, true);
@@ -111,11 +118,13 @@ test('scoreRun treats a passing verification after an earlier failure as recover
     event('session.ended', { ended_reason: 'completed' }, '2026-05-02T10:00:03.000Z')
   ]);
 
-  assert.equal(score.outcome_confidence, 0.9);
+  assert.equal(score.outcome_confidence >= 0.8, true);
   assert.equal(score.verification_coverage, 1);
-  assert.equal(score.rework_risk, 0.1);
+  assert.equal(score.rework_risk <= 0.25, true);
   assert.equal(score.reasons.includes('verification_passed_after_changes'), true);
+  assert.equal(score.reasons.includes('verification_recovered'), true);
   assert.equal(score.reasons.includes('verification_failed_at_end'), false);
+  assert.equal(score.score_contributions.some((item) => item.reason === 'verification_recovered' && item.impact > 0), true);
 });
 
 test('scoreRun detects permission friction from repeated wait time', () => {
@@ -143,8 +152,9 @@ test('scoreRun detects command loops from repeated failing commands', () => {
   ]);
 
   assert.equal(score.loop_risk, 0.8);
-  assert.equal(score.outcome_confidence, 0.25);
+  assert.equal(score.outcome_confidence <= 0.3, true);
   assert.equal(score.reasons.includes('repeated_command_failure'), true);
+  assert.equal(score.score_contributions.some((item) => item.reason === 'repeated_command_failure' && item.impact < 0), true);
 });
 
 test('scoreRun raises confidence when the run has an accepted satisfaction signal', () => {
@@ -163,9 +173,10 @@ test('scoreRun raises confidence when the run has an accepted satisfaction signa
     })
   ]);
 
-  assert.equal(score.outcome_confidence, 0.85);
-  assert.equal(score.rework_risk, 0.2);
+  assert.equal(score.outcome_confidence >= 0.8, true);
+  assert.equal(score.rework_risk <= 0.25, true);
   assert.equal(score.reasons.includes('satisfaction_accepted'), true);
+  assert.equal(score.score_contributions.some((item) => item.reason === 'satisfaction_accepted' && item.impact > 0), true);
 });
 
 test('scoreRun lowers confidence when the latest satisfaction signal is abandoned', () => {
@@ -179,8 +190,8 @@ test('scoreRun lowers confidence when the latest satisfaction signal is abandone
     })
   ]);
 
-  assert.equal(score.outcome_confidence, 0.15);
-  assert.equal(score.rework_risk, 0.85);
+  assert.equal(score.outcome_confidence <= 0.2, true);
+  assert.equal(score.rework_risk >= 0.8, true);
   assert.equal(score.reasons.includes('satisfaction_abandoned'), true);
 });
 
@@ -199,11 +210,37 @@ test('scoreRun handles corrected, rerun, and escalated satisfaction labels', () 
     event('satisfaction.recorded', { label: 'escalated', signal: 'human took over' })
   ]);
 
-  assert.equal(corrected.outcome_confidence, 0.55);
+  assert.equal(corrected.outcome_confidence <= 0.65, true);
   assert.equal(corrected.rework_risk, 0.65);
   assert.equal(corrected.reasons.includes('satisfaction_corrected'), true);
-  assert.equal(rerun.outcome_confidence, 0.35);
+  assert.equal(rerun.outcome_confidence <= 0.4, true);
   assert.equal(rerun.reasons.includes('satisfaction_rerun'), true);
-  assert.equal(escalated.outcome_confidence, 0.25);
+  assert.equal(escalated.outcome_confidence <= 0.3, true);
   assert.equal(escalated.reasons.includes('satisfaction_escalated'), true);
+});
+
+test('scoreRun gives modest engagement credit only when a long session has no failure loop', () => {
+  const engaged = scoreRun([
+    event('session.started', {}, '2026-05-02T10:00:00.000Z'),
+    event('user.prompt.submitted', { prompt_length: 40 }, '2026-05-02T10:00:05.000Z'),
+    event('model.call.ended', { total_tokens: 1800 }, '2026-05-02T10:03:00.000Z'),
+    event('tool.call.ended', { tool_name: 'Read', status: 'ok' }, '2026-05-02T10:05:00.000Z'),
+    event('command.ended', { binary: 'git', exit_code: 0, is_verification: false }, '2026-05-02T10:08:00.000Z'),
+    event('model.call.ended', { total_tokens: 1200 }, '2026-05-02T10:12:00.000Z'),
+    event('tool.call.ended', { tool_name: 'Read', status: 'ok' }, '2026-05-02T10:16:00.000Z'),
+    event('session.ended', { ended_reason: 'completed' }, '2026-05-02T10:20:00.000Z')
+  ]);
+  const looping = scoreRun([
+    event('session.started', {}, '2026-05-02T10:00:00.000Z'),
+    event('command.ended', { binary: 'npm', args_hash: 'sha256:same', exit_code: 1, is_verification: true }, '2026-05-02T10:02:00.000Z'),
+    event('command.ended', { binary: 'npm', args_hash: 'sha256:same', exit_code: 1, is_verification: true }, '2026-05-02T10:08:00.000Z'),
+    event('command.ended', { binary: 'npm', args_hash: 'sha256:same', exit_code: 1, is_verification: true }, '2026-05-02T10:14:00.000Z'),
+    event('session.ended', { ended_reason: 'completed' }, '2026-05-02T10:20:00.000Z')
+  ]);
+
+  assert.equal(engaged.score_contributions.some((item) => item.reason === 'healthy_engagement' && item.impact > 0), true);
+  assert.equal(engaged.trust_score > 55, true);
+  assert.equal(engaged.trust_score < 70, true);
+  assert.equal(looping.score_contributions.some((item) => item.reason === 'healthy_engagement'), false);
+  assert.equal(looping.reasons.includes('repeated_command_failure'), true);
 });

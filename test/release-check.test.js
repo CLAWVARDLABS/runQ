@@ -20,11 +20,11 @@ test('runV02ReleaseCheck proves every v0.2 local-alpha product scenario', () => 
   assert.equal(report.runq_version, '0.2.0');
   assert.equal(report.ok, true);
   assert.equal(report.checks.every((check) => check.ok), true);
-  assert.equal(report.scenarios.openclaw_verified_success.quality.outcome_confidence, 0.9);
+  assert.equal(report.scenarios.openclaw_verified_success.quality.outcome_confidence, 0.96);
   assert.equal(report.scenarios.openclaw_repeated_failure.recommendation_categories.includes('verification_strategy'), true);
   assert.equal(report.scenarios.openclaw_repeated_failure.recommendation_categories.includes('loop_prevention'), true);
   assert.deepEqual(report.scenarios.coding_task_recovery.command_statuses, [1, 0]);
-  assert.equal(report.scenarios.coding_task_recovery.quality.outcome_confidence, 0.9);
+  assert.equal(report.scenarios.coding_task_recovery.quality.outcome_confidence, 0.96);
   assert.equal(report.scenarios.coding_task_recovery.recommendation_categories.length, 0);
   assert.equal(report.readiness.sessions.total, 3);
   assert.equal(report.readiness.sessions.usable_timeline_percent, 1);

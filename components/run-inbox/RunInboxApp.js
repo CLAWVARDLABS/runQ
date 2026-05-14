@@ -825,17 +825,48 @@ function deriveAgents(sessions, setupHealth) {
   });
 }
 
-function groupRunsForChart(sessions) {
-  const sorted = [...sessions].sort((a, b) => (a.started_at || a.last_event_at || '').localeCompare(b.started_at || b.last_event_at || ''));
-  return sorted.slice(-7).map((session, i) => ({
-    label: (session.started_at || session.last_event_at || '').slice(5, 10) || `#${i + 1}`,
+function sessionTimestamp(session) {
+  return session.started_at || session.last_event_at || '';
+}
+
+function sessionToPoint(session, label) {
+  return {
+    label,
     input: Number(session.telemetry?.input_tokens || 0),
     output: Number(session.telemetry?.output_tokens || 0),
     commands: Number(session.telemetry?.command_count || 0),
     verifications: Number(session.telemetry?.verification_count || 0),
     confidence: trustScoreValue(session.quality) / 100,
     activity: Number(session.telemetry?.command_count || 0) + Number(session.telemetry?.verification_count || 0)
-  }));
+  };
+}
+
+export function groupRunsForChart(sessions, range = '7d') {
+  const sorted = [...sessions].sort((a, b) =>
+    String(sessionTimestamp(a)).localeCompare(String(sessionTimestamp(b)))
+  );
+  if (range === '24h') {
+    const now = Date.now();
+    const cutoff = now - 24 * 60 * 60 * 1000;
+    const recent = sorted.filter((s) => {
+      const ts = Date.parse(sessionTimestamp(s));
+      return Number.isFinite(ts) && ts >= cutoff;
+    });
+    // If nothing happened in the last 24h, fall back to the most recent
+    // entries so the chart isn't empty (matches the spirit of the toggle).
+    const window = recent.length > 0 ? recent : sorted.slice(-12);
+    return window.slice(-24).map((session, i) => {
+      const ts = sessionTimestamp(session);
+      const label = ts.length >= 16 ? ts.slice(11, 16) : `#${i + 1}`;
+      return sessionToPoint(session, label);
+    });
+  }
+  // '7d' (default): last 7 chronological entries.
+  return sorted.slice(-7).map((session, i) => {
+    const ts = sessionTimestamp(session);
+    const label = ts.slice(5, 10) || `#${i + 1}`;
+    return sessionToPoint(session, label);
+  });
 }
 
 function verdictFor(session, t) {
@@ -1536,7 +1567,16 @@ function smoothBezier(points) {
   return cmds.join(' ');
 }
 
-function PerformanceTrend({ chartPoints, stats, t }) {
+function PerformanceTrend({ chartPoints, stats, t, sessions }) {
+  const [range, setRange] = useState('7d');
+  const rangedPoints = useMemo(
+    () => sessions ? groupRunsForChart(sessions, range) : chartPoints,
+    [sessions, range, chartPoints]
+  );
+  return PerformanceTrendChart({ chartPoints: rangedPoints, stats, t, range, onRangeChange: setRange });
+}
+
+function PerformanceTrendChart({ chartPoints, stats, t, range, onRangeChange }) {
   const width = 800; const height = 240;
   const max = Math.max(1, ...chartPoints.map((p) => p.input + p.output));
   const totalTokens = chartPoints.reduce((sum, p) => sum + p.input + p.output, 0);
@@ -1558,9 +1598,21 @@ function PerformanceTrend({ chartPoints, stats, t }) {
         h('h3', { className: 'font-h3 text-xl' }, t.tokenConsumption),
         h('p', { className: 'text-slate-500 text-sm' }, t.advisorBody)
       ]),
-      h('div', { className: 'flex gap-2' }, [
-        h('span', { className: 'px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-medium' }, t.last24h),
-        h('span', { className: 'px-3 py-1 rounded-full bg-slate-50 text-slate-400 text-xs font-medium' }, t.last7d)
+      h('div', { className: 'flex gap-2', role: 'tablist', 'aria-label': t.tokenConsumption }, [
+        h('button', {
+          'aria-pressed': range === '24h' ? 'true' : 'false',
+          'data-range': '24h',
+          className: `px-3 py-1 rounded-full text-xs font-medium transition-colors ${range === '24h' ? 'bg-primary text-on-primary shadow-sm' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`,
+          onClick: () => onRangeChange?.('24h'),
+          type: 'button'
+        }, t.last24h),
+        h('button', {
+          'aria-pressed': range === '7d' ? 'true' : 'false',
+          'data-range': '7d',
+          className: `px-3 py-1 rounded-full text-xs font-medium transition-colors ${range === '7d' ? 'bg-primary text-on-primary shadow-sm' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`,
+          onClick: () => onRangeChange?.('7d'),
+          type: 'button'
+        }, t.last7d)
       ])
     ]),
     h('div', { className: 'relative h-64 w-full' }, [
@@ -2136,7 +2188,7 @@ function SessionsDetail({ selectedAgent, agents, agentSessions, visibleSessions,
       })
     ]),
     h('div', { className: 'grid grid-cols-1 lg:grid-cols-3 gap-gutter' }, [
-      h(PerformanceTrend, { chartPoints, key: 'perf', stats: allStats, t }),
+      h(PerformanceTrend, { chartPoints, key: 'perf', sessions: visibleSessions, stats: allStats, t }),
       h('div', { className: 'glass-card rounded-3xl p-lg' }, [
         h('h3', { className: 'mb-md text-h3 font-h3 tracking-tight' }, t.confidenceTrend),
         h(ConfidenceBars, { chartPoints, t }),
@@ -3190,7 +3242,7 @@ export function RunInboxApp({ initialSessions = [], initialEvents = [], setupHea
       h(AgentFleet, { agents, key: 'fleet', onOpenSetupWizard: openSetupWizard, t }),
       h('p', { className: 'sr-only', key: 'product-modules' }, t.productSections),
       h('div', { className: 'grid grid-cols-1 lg:grid-cols-3 gap-gutter', key: 'mid' }, [
-        h(PerformanceTrend, { chartPoints, key: 'perf', stats, t }),
+        h(PerformanceTrend, { chartPoints, key: 'perf', sessions, stats, t }),
         h(AdvisorPanel, { key: 'advisor', recommendations: allRecs, t })
       ])
     ],

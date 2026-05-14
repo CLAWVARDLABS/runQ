@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 
 import { normalizeClaudeCodeHook } from '../adapters/claude-code/normalize.js';
+import { claudeCodeSessionRowsToEvents } from '../src/importers/claude-code.js';
 import { RunqStore } from '../src/store.js';
 
 const hookPath = new URL('../adapters/claude-code/hook.js', import.meta.url).pathname;
@@ -92,6 +93,101 @@ test('normalizeClaudeCodeHook maps Bash PreToolUse and PostToolUse to command ev
   assert.equal(ended.payload.command_id, 'toolu_123');
   assert.equal(ended.payload.exit_code, 0);
   assert.equal(ended.payload.stdout_hash.startsWith('sha256:'), true);
+});
+
+test('Claude Code transcript import preserves Bash verification and file edit evidence', () => {
+  const rows = [
+    {
+      type: 'user',
+      sessionId: 'claude-transcript-1',
+      timestamp: '2026-05-02T12:00:00.000Z',
+      cwd: '/repo/app',
+      message: {
+        role: 'user',
+        content: 'Fix the failing test.'
+      }
+    },
+    {
+      type: 'assistant',
+      sessionId: 'claude-transcript-1',
+      timestamp: '2026-05-02T12:01:00.000Z',
+      message: {
+        id: 'msg_1',
+        role: 'assistant',
+        model: 'claude-sonnet-4-6',
+        usage: {},
+        content: [{
+          type: 'tool_use',
+          id: 'toolu_edit',
+          name: 'Edit',
+          input: {
+            file_path: '/repo/app/src/cart.js',
+            old_string: 'return subtotal;',
+            new_string: 'return subtotal * 1.1;'
+          }
+        }]
+      }
+    },
+    {
+      type: 'user',
+      sessionId: 'claude-transcript-1',
+      timestamp: '2026-05-02T12:01:10.000Z',
+      message: {
+        role: 'user',
+        content: [{
+          type: 'tool_result',
+          tool_use_id: 'toolu_edit',
+          content: 'The file /repo/app/src/cart.js has been updated.'
+        }]
+      }
+    },
+    {
+      type: 'assistant',
+      sessionId: 'claude-transcript-1',
+      timestamp: '2026-05-02T12:02:00.000Z',
+      message: {
+        id: 'msg_2',
+        role: 'assistant',
+        model: 'claude-sonnet-4-6',
+        usage: {},
+        content: [{
+          type: 'tool_use',
+          id: 'toolu_test',
+          name: 'Bash',
+          input: {
+            command: 'npm test -- test/cart.test.js',
+            description: 'Run cart tests'
+          }
+        }]
+      }
+    },
+    {
+      type: 'user',
+      sessionId: 'claude-transcript-1',
+      timestamp: '2026-05-02T12:02:10.000Z',
+      message: {
+        role: 'user',
+        content: [{
+          type: 'tool_result',
+          tool_use_id: 'toolu_test',
+          content: 'ok'
+        }]
+      }
+    }
+  ];
+
+  const events = claudeCodeSessionRowsToEvents(rows);
+  const commandEnded = events.find((event) => event.event_type === 'command.ended');
+  const fileChanged = events.find((event) => event.event_type === 'file.changed');
+  const outcome = events.find((event) => event.event_type === 'outcome.scored');
+
+  assert.equal(commandEnded?.payload.binary, 'npm');
+  assert.equal(commandEnded?.payload.exit_code, 0);
+  assert.equal(commandEnded?.payload.is_verification, true);
+  assert.equal(fileChanged?.payload.change_kind, 'modified');
+  assert.equal(fileChanged?.payload.file_extension, 'js');
+  assert.equal(outcome?.payload.trust_score, 88);
+  assert.deepEqual(outcome?.payload.reasons, ['verification_passed_after_changes']);
 });
 
 test('Claude Code hook command reads stdin and appends normalized events', () => {

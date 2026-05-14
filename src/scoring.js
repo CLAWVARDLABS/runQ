@@ -6,8 +6,32 @@ function clampScore(value) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
+function number(value) {
+  return Number.isFinite(Number(value)) ? Number(value) : 0;
+}
+
 function commandKey(event) {
   return `${event.payload.binary ?? ''}:${event.payload.args_hash ?? ''}`;
+}
+
+function scoreContribution(reason, impact) {
+  return {
+    reason,
+    impact: Math.round(impact)
+  };
+}
+
+function eventDurationMinutes(events) {
+  const timestamps = events
+    .map((event) => Date.parse(event.timestamp))
+    .filter((value) => Number.isFinite(value));
+  if (timestamps.length < 2) return 0;
+  return Math.max(0, (Math.max(...timestamps) - Math.min(...timestamps)) / 60_000);
+}
+
+function changeVolume(fileChanges) {
+  return fileChanges.reduce((sum, event) =>
+    sum + number(event.payload?.lines_added) + number(event.payload?.lines_removed), 0);
 }
 
 function trustDimension(label, score, reasons) {
@@ -93,8 +117,16 @@ function buildTrustBreakdown({
 
 export function scoreRun(events) {
   const reasons = [];
+  const scoreContributions = [];
+  const lifecycleEvents = events.filter((event) => event.event_type === 'session.started' || event.event_type === 'session.ended');
+  const promptEvents = events.filter((event) => event.event_type === 'user.prompt.submitted');
+  const modelEvents = events.filter((event) => event.event_type.startsWith('model.'));
+  const toolEnded = events.filter((event) => event.event_type === 'tool.call.ended');
+  const toolErrors = toolEnded.filter((event) => event.payload?.status === 'error' || event.payload?.status === 'failed');
   const fileChanges = events.filter((event) => event.event_type === 'file.changed' || event.event_type === 'git.diff.summarized');
   const commandEnded = events.filter((event) => event.event_type === 'command.ended');
+  const failedCommands = commandEnded.filter((event) => Number(event.payload.exit_code) !== 0);
+  const passedCommands = commandEnded.filter((event) => Number(event.payload.exit_code) === 0);
   const verificationCommands = commandEnded.filter((event) => event.payload.is_verification === true);
   const failedVerification = verificationCommands.filter((event) => Number(event.payload.exit_code) !== 0);
   const passedVerification = verificationCommands.filter((event) => Number(event.payload.exit_code) === 0);
@@ -110,25 +142,69 @@ export function scoreRun(events) {
   let loopRisk = 0;
   let costEfficiency = 0.5;
 
+  function add(reason, impact) {
+    if (!impact) return;
+    scoreContributions.push(scoreContribution(reason, impact));
+  }
+
+  const evidenceKinds = [
+    lifecycleEvents.length > 0,
+    promptEvents.length > 0,
+    modelEvents.length > 0,
+    toolEnded.length > 0,
+    commandEnded.length > 0,
+    fileChanges.length > 0,
+    verificationCommands.length > 0,
+    Boolean(satisfaction)
+  ].filter(Boolean).length;
+  add('evidence_breadth', Math.min(12, evidenceKinds * 1.5));
+
+  if (fileChanges.length > 0) {
+    add('file_change_evidence', Math.min(8, 3 + Math.sqrt(fileChanges.length) * 2));
+  }
+
+  if (commandEnded.length > 0) {
+    const commandSuccessRate = passedCommands.length / commandEnded.length;
+    add('command_success_rate', Math.round(commandSuccessRate * 6));
+    const commandErrorPenalty = Math.min(12, (failedCommands.length / commandEnded.length) * 12);
+    add('command_failure_rate', -commandErrorPenalty);
+  }
+
+  if (toolEnded.length > 0) {
+    const toolErrorPenalty = Math.min(8, (toolErrors.length / toolEnded.length) * 8);
+    add('tool_failure_rate', -toolErrorPenalty);
+  }
+
   if (fileChanges.length > 0 && passedVerification.length > 0 && Number(latestVerification?.payload?.exit_code) === 0) {
-    outcomeConfidence = 0.9;
     verificationCoverage = 1;
     reworkRisk = 0.1;
+    add('verification_passed_after_changes', 22 + Math.min(4, passedVerification.length));
     reasons.push('verification_passed_after_changes');
   }
 
+  if (failedVerification.length > 0 && passedVerification.length > 0 && Number(latestVerification?.payload?.exit_code) === 0) {
+    add('verification_recovered', 4);
+    reasons.push('verification_recovered');
+  }
+
   if (failedVerification.length > 0 && sessionEnded && Number(latestVerification?.payload?.exit_code) !== 0) {
-    outcomeConfidence = Math.min(outcomeConfidence, 0.2);
     verificationCoverage = Math.max(verificationCoverage, 0.4);
     reworkRisk = Math.max(reworkRisk, 0.8);
+    add('verification_failed_at_end', -35);
     reasons.push('verification_failed_at_end');
   }
 
   if (fileChanges.length > 0 && verificationCommands.length === 0) {
-    outcomeConfidence = Math.min(outcomeConfidence, 0.35);
     verificationCoverage = 0;
     reworkRisk = Math.max(reworkRisk, 0.75);
+    add('changes_without_verification', -22);
     reasons.push('changes_without_verification');
+  }
+
+  const changedLines = changeVolume(fileChanges);
+  if (changedLines >= 100) {
+    add('large_change_surface', -Math.min(8, Math.floor(changedLines / 100) * 2));
+    reworkRisk = Math.max(reworkRisk, Math.min(0.75, 0.4 + changedLines / 1000));
   }
 
   const totalPermissionWait = permissionEvents.reduce((sum, event) => sum + Number(event.payload.wait_ms ?? 0), 0);
@@ -136,6 +212,7 @@ export function scoreRun(events) {
     permissionFriction = clamp(Math.min(1, totalPermissionWait / 60_000));
     if (totalPermissionWait >= 30_000 || permissionEvents.length >= 3) {
       permissionFriction = Math.max(permissionFriction, 0.75);
+      add('high_permission_wait', -6);
       reasons.push('high_permission_wait');
     }
   }
@@ -150,52 +227,105 @@ export function scoreRun(events) {
   }
   if ([...failedCommandCounts.values()].some((count) => count >= 3)) {
     loopRisk = 0.8;
-    outcomeConfidence = Math.min(outcomeConfidence, 0.25);
     reworkRisk = Math.max(reworkRisk, 0.7);
+    add('repeated_command_failure', -25);
     reasons.push('repeated_command_failure');
   }
 
   if (sessionEnded?.payload?.ended_reason === 'interrupted') {
-    outcomeConfidence = Math.min(outcomeConfidence, 0.2);
     reworkRisk = Math.max(reworkRisk, 0.8);
+    add('user_interrupted', -28);
     reasons.push('user_interrupted');
   }
 
+  const durationMinutes = eventDurationMinutes(events);
+  const interactionCount = promptEvents.length + modelEvents.length + toolEnded.length + commandEnded.length + fileChanges.length;
+  if (durationMinutes >= 10 && interactionCount >= 6 && loopRisk === 0 && failedCommands.length <= Math.max(1, commandEnded.length * 0.2)) {
+    add('healthy_engagement', Math.min(6, 2 + Math.floor(durationMinutes / 10) + Math.floor(interactionCount / 8)));
+    reasons.push('healthy_engagement');
+  }
+
+  const totalTokens = modelEvents.reduce((sum, event) => sum + number(event.payload?.total_tokens), 0);
+  const hasStrongEvidence = fileChanges.length > 0 || verificationCommands.length > 0 || satisfaction;
+  if (totalTokens >= 20_000 && !hasStrongEvidence) {
+    costEfficiency = 0.25;
+    add('high_cost_low_evidence', -8);
+    reasons.push('high_cost_low_evidence');
+  } else if (totalTokens > 0 && totalTokens <= 5_000) {
+    costEfficiency = 0.65;
+    add('cost_discipline', 2);
+  }
+
   if (satisfaction?.payload?.label === 'accepted') {
-    outcomeConfidence = Math.max(outcomeConfidence, 0.85);
     reworkRisk = Math.min(reworkRisk, 0.2);
+    add('satisfaction_accepted', 18);
     reasons.push('satisfaction_accepted');
   }
 
   if (satisfaction?.payload?.label === 'abandoned') {
-    outcomeConfidence = Math.min(outcomeConfidence, 0.15);
     reworkRisk = Math.max(reworkRisk, 0.85);
+    add('satisfaction_abandoned', -40);
     reasons.push('satisfaction_abandoned');
   }
 
   if (satisfaction?.payload?.label === 'needs_review') {
-    outcomeConfidence = Math.min(outcomeConfidence, 0.45);
     reworkRisk = Math.max(reworkRisk, 0.55);
+    add('satisfaction_needs_review', -10);
     reasons.push('satisfaction_needs_review');
   }
 
   if (satisfaction?.payload?.label === 'corrected') {
-    outcomeConfidence = Math.min(outcomeConfidence, 0.55);
     reworkRisk = Math.max(reworkRisk, 0.65);
+    add('satisfaction_corrected', -18);
     reasons.push('satisfaction_corrected');
   }
 
   if (satisfaction?.payload?.label === 'rerun') {
-    outcomeConfidence = Math.min(outcomeConfidence, 0.35);
     reworkRisk = Math.max(reworkRisk, 0.7);
+    add('satisfaction_rerun', -24);
     reasons.push('satisfaction_rerun');
   }
 
   if (satisfaction?.payload?.label === 'escalated') {
-    outcomeConfidence = Math.min(outcomeConfidence, 0.25);
     reworkRisk = Math.max(reworkRisk, 0.8);
+    add('satisfaction_escalated', -32);
     reasons.push('satisfaction_escalated');
   }
+
+  let trustScore = 50 + scoreContributions.reduce((sum, item) => sum + item.impact, 0);
+  if (failedVerification.length > 0 && sessionEnded && Number(latestVerification?.payload?.exit_code) !== 0) {
+    trustScore = Math.min(trustScore, 28);
+  }
+  if (fileChanges.length > 0 && passedVerification.length > 0 && Number(latestVerification?.payload?.exit_code) === 0 && !satisfaction) {
+    trustScore = Math.min(trustScore, 88);
+  }
+  if (fileChanges.length > 0 && verificationCommands.length === 0) {
+    trustScore = Math.min(trustScore, 48);
+  }
+  if (fileChanges.length === 0 && verificationCommands.length === 0 && !satisfaction) {
+    trustScore = Math.min(trustScore, 68);
+  }
+  if ([...failedCommandCounts.values()].some((count) => count >= 3)) {
+    trustScore = Math.min(trustScore, 30);
+  }
+  if (satisfaction?.payload?.label === 'accepted') {
+    trustScore = Math.max(trustScore, 82);
+    trustScore = Math.min(trustScore, 96);
+  }
+  if (satisfaction?.payload?.label === 'abandoned') {
+    trustScore = Math.min(trustScore, 18);
+    trustScore = Math.max(trustScore, 7);
+  }
+  if (satisfaction?.payload?.label === 'corrected') {
+    trustScore = Math.min(trustScore, 64);
+  }
+  if (satisfaction?.payload?.label === 'rerun') {
+    trustScore = Math.min(trustScore, 38);
+  }
+  if (satisfaction?.payload?.label === 'escalated') {
+    trustScore = Math.min(trustScore, 30);
+  }
+  outcomeConfidence = clamp(clampScore(trustScore) / 100);
 
   const normalizedOutcomeConfidence = clamp(outcomeConfidence);
   const normalizedVerificationCoverage = clamp(verificationCoverage);
@@ -228,7 +358,8 @@ export function scoreRun(events) {
     permission_friction: normalizedPermissionFriction,
     loop_risk: normalizedLoopRisk,
     cost_efficiency: normalizedCostEfficiency,
-    score_version: '0.2.0',
-    reasons
+    score_version: '0.3.0',
+    reasons: Array.from(new Set(reasons)),
+    score_contributions: scoreContributions.filter((item) => item.impact !== 0)
   };
 }

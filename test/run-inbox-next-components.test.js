@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { RunInboxApp } from '../components/run-inbox/RunInboxApp.js';
+import { CheckupProgressModal, RunInboxApp } from '../components/run-inbox/RunInboxApp.js';
 
 function fixtureProps() {
   return {
@@ -48,7 +48,11 @@ function fixtureProps() {
         permission_friction: 0,
         loop_risk: 0.8,
         cost_efficiency: 0.5,
-        reasons: ['verification_failed_at_end']
+        reasons: ['verification_failed_at_end'],
+        score_contributions: [
+          { reason: 'evidence_breadth', impact: 9 },
+          { reason: 'verification_failed_at_end', impact: -35 }
+        ]
       },
       recommendations: [{
         category: 'verification_strategy',
@@ -106,6 +110,11 @@ test('RunInboxApp renders the agent-first Agents page without dumping every modu
   assert.doesNotMatch(html, /Codex 命令行编码代理/);
   assert.match(html, /English/);
   assert.match(html, /RunQ Console/);
+  assert.match(html, /data-agent-checkup-guide="true"/);
+  assert.match(html, /运行一次体检，确认本地历史和实时 hook 都已就绪/);
+  assert.match(html, /data-action="open-agent-checkup-guide"/);
+  assert.match(html, /href="\/agents\/claude_code\/health-report"/);
+  assert.match(html, />去体检</);
   assert.match(html, /data-auto-refresh-sessions-ms="10000"/);
   assert.match(html, /data-auto-refresh-events-ms="3000"/);
   assert.doesNotMatch(html, /RunQ Console<\/h1><nav class="flex gap-6"/);
@@ -209,6 +218,11 @@ test('RunInboxApp renders Sessions as a separate subpage with run quality', () =
   assert.match(html, /Trust Model/);
   assert.match(html, /Evidence Strength/);
   assert.match(html, /Risk Exposure/);
+  assert.match(html, /评分贡献/);
+  assert.match(html, /evidence_breadth/);
+  assert.match(html, /verification_failed_at_end/);
+  assert.match(html, /\+9/);
+  assert.match(html, /-35/);
   assert.match(html, /优化建议/);
   assert.match(html, /abandoned/);
   assert.match(html, /Run targeted verification earlier/);
@@ -387,6 +401,52 @@ test('RunInboxApp scopes setup checks when initialAgentId is provided', () => {
   assert.match(html, /node src\/cli\.js init codex --db \.runq\/runq\.db/);
   assert.doesNotMatch(html, /Claude Code/);
   assert.doesNotMatch(html, /Hook configured/);
+});
+
+test('CheckupProgressModal keeps a stable readable panel width while running', () => {
+  const html = renderToStaticMarkup(React.createElement(CheckupProgressModal, {
+    agentName: 'Claude Code',
+    onClose: () => {},
+    state: {
+      open: true,
+      phase: 'starting',
+      current: 0,
+      total: 0,
+      files: 0,
+      sessions: 0,
+      events: 0,
+      elapsedMs: 0,
+      lastFile: null,
+      hooksInstalled: false,
+      result: null,
+      error: null,
+      startedAt: 0
+    },
+    t: {
+      checkupModalTitle: '正在体检',
+      checkupPhaseStarting: '准备中',
+      checkupPhaseDetect: '检测安装状态',
+      checkupPhaseInstallHooks: '写入 RunQ hooks',
+      checkupPhaseHooksInstalled: 'Hook 已就位',
+      checkupPhaseListFiles: '扫描本地历史',
+      checkupPhaseFilesListed: '历史文件已列出',
+      checkupPhaseReadingHermes: '读取 Hermes state.db',
+      checkupPhaseImport: '导入会话',
+      checkupPhaseDone: '完成',
+      checkupCloseModal: '查看完整报告',
+      checkupCancel: '关闭',
+      checkupStat_files: '历史文件',
+      checkupStat_sessions: '已导入会话',
+      checkupStat_events: '已导入事件',
+      checkupStat_elapsed: '用时'
+    }
+  }));
+
+  assert.match(html, /style="width:min\(36rem, calc\(100vw - 2rem\)\)"/);
+  assert.match(html, /max-w-full min-w-0 rounded-3xl/);
+  assert.match(html, /grid grid-cols-2 gap-2 text-center sm:grid-cols-4/);
+  assert.match(html, /Claude Code/);
+  assert.match(html, /准备中/);
 });
 
 test('RunInboxApp renders an evaluation review queue with trace links', () => {

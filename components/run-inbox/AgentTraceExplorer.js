@@ -351,24 +351,10 @@ function RunqLogo({ className = 'h-10 w-10' }) {
     'data-logo': 'runq',
     viewBox: '0 0 128 128'
   }, [
-    h('defs', null, [
-      h('linearGradient', { id: 'runq-trace-mark-bg', gradientUnits: 'userSpaceOnUse', x1: '16', x2: '116', y1: '12', y2: '118' }, [
-        h('stop', { stopColor: '#111827' }),
-        h('stop', { offset: '1', stopColor: '#0050CB' })
-      ]),
-      h('linearGradient', { id: 'runq-trace-mark-orbit', gradientUnits: 'userSpaceOnUse', x1: '26', x2: '102', y1: '30', y2: '100' }, [
-        h('stop', { stopColor: '#00EEFC' }),
-        h('stop', { offset: '1', stopColor: '#0066FF' })
-      ])
-    ]),
-    h('rect', { fill: 'url(#runq-trace-mark-bg)', height: '128', rx: '28', width: '128' }),
-    h('path', { d: 'M30 66c0-21.5 15.7-38 37-38 17.6 0 30.8 11.4 34.4 27.7', fill: 'none', stroke: 'url(#runq-trace-mark-orbit)', strokeLinecap: 'round', strokeWidth: '10' }),
-    h('path', { d: 'M98 65c0 21.5-15.7 38-37 38-18 0-31.5-11.9-34.7-28.7', fill: 'none', stroke: '#F8FAFC', strokeLinecap: 'round', strokeWidth: '10' }),
-    h('path', { d: 'M75 87l18 18', stroke: '#F8FAFC', strokeLinecap: 'round', strokeWidth: '10' }),
-    h('circle', { cx: '67', cy: '66', fill: '#F8FAFC', r: '16' }),
-    h('circle', { cx: '67', cy: '66', fill: '#0050CB', r: '7' }),
-    h('circle', { cx: '101', cy: '54', fill: '#22C55E', r: '8' }),
-    h('path', { d: 'M97.5 54.2l2.4 2.5 5.1-6', fill: 'none', stroke: '#F8FAFC', strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: '2.8' })
+    h('rect', { fill: '#050505', height: '128', rx: '28', width: '128' }),
+    h('circle', { cx: '62', cy: '62', fill: 'none', r: '38', stroke: '#FFFFFF', strokeLinecap: 'round', strokeWidth: '8' }),
+    h('circle', { cx: '62', cy: '62', fill: 'none', r: '20', stroke: '#FFFFFF', strokeLinecap: 'round', strokeWidth: '8' }),
+    h('path', { d: 'M76 76L102 102', fill: 'none', stroke: '#FFFFFF', strokeLinecap: 'round', strokeWidth: '8' })
   ]);
 }
 
