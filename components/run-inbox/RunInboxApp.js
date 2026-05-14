@@ -81,6 +81,11 @@ const copy = {
     checkConnection: '检查连接',
     connectedNotice: '已接入。后续运行会自动进入 RunQ。',
     pendingNotice: '完成步骤后点击检查连接；成功后这里会显示 Connected。',
+    checkupGuideEyebrow: '建议下一步',
+    checkupGuideTitle: '运行一次体检，确认本地历史和实时 hook 都已就绪',
+    checkupGuideBody: 'RunQ 会扫描本机历史会话、导入可用事件，并检查后续运行是否能自动进入控制台。',
+    checkupGuidePrimary: '去体检',
+    checkupGuideSecondary: '接入设置',
     agentOverview: 'Agent 总览',
     agentFleet: 'Agent 队列',
     capabilityOverview: '能力总览',
@@ -98,6 +103,7 @@ const copy = {
     trustScore: 'RunQ 信任分',
     trustModel: 'Trust Model',
     outcomeEvidence: 'Outcome 证据',
+    scoreContributions: '评分贡献',
     failureRate: 'Failure Rate',
     runs: '运行',
     runCount: '运行总数',
@@ -179,7 +185,8 @@ const copy = {
     realDataNote: '本地事件库 · metadata-first',
     evalsBody: '用真实任务集评估 agent 表现。下方指标全部来自当前 Agent 的本地事件。',
     evalsPassRate: '通过率',
-    evalsCoverage: '验证覆盖',
+    evalsCoverage: '跑过验证命令的会话',
+    evalsCoverageHint: '识别 npm test / build / lint / pytest 等执行结果的命令',
     evalsAccepted: '满意度采纳',
     evalQueue: '评估队列',
     openTrace: '打开追踪',
@@ -312,6 +319,11 @@ const copy = {
     checkConnection: 'Check Connection',
     connectedNotice: 'Connected. Future runs will be captured by RunQ.',
     pendingNotice: 'Run the setup steps, then check the connection. Connected agents will show Ready here.',
+    checkupGuideEyebrow: 'Suggested next step',
+    checkupGuideTitle: 'Run a check-up to confirm local history and live hooks',
+    checkupGuideBody: 'RunQ scans local session history, imports available events, and verifies that future runs can enter the console automatically.',
+    checkupGuidePrimary: 'Run check-up',
+    checkupGuideSecondary: 'Setup',
     agentOverview: 'Agent Overview',
     agentFleet: 'Agent Fleet',
     capabilityOverview: 'Capability Overview',
@@ -329,6 +341,7 @@ const copy = {
     trustScore: 'RunQ Trust Score',
     trustModel: 'Trust Model',
     outcomeEvidence: 'Outcome evidence',
+    scoreContributions: 'Score contributions',
     failureRate: 'Failure Rate',
     runs: 'runs',
     runCount: 'Total runs',
@@ -410,7 +423,8 @@ const copy = {
     realDataNote: 'Local event store · metadata-first',
     evalsBody: 'Evaluate agents against real task suites. Metrics below come from local events for the selected agent.',
     evalsPassRate: 'Pass rate',
-    evalsCoverage: 'Verification coverage',
+    evalsCoverage: 'Sessions that ran a verification command',
+    evalsCoverageHint: 'Detects npm test / build / lint / pytest-style commands',
     evalsAccepted: 'Satisfaction accepted',
     evalQueue: 'Evaluation queue',
     openTrace: 'Open trace',
@@ -1107,6 +1121,49 @@ function AddAgentCard({ onOpen, t }) {
   ]);
 }
 
+function CheckupGuide({ agent, onOpenSetupWizard, t }) {
+  if (!agent) return null;
+  return h('div', {
+    className: 'glass-card-strong rounded-3xl border border-primary/10 p-md shadow-lg shadow-primary/5',
+    'data-agent-checkup-guide': 'true'
+  }, [
+    h('div', { className: 'flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between' }, [
+      h('div', { className: 'min-w-0' }, [
+        h('div', { className: 'mb-2 flex items-center gap-2 text-primary' }, [
+          h(MaterialIcon, { className: 'text-[20px]', name: 'health_and_safety' }),
+          h('span', { className: 'font-label-caps text-label-caps uppercase' }, t.checkupGuideEyebrow)
+        ]),
+        h('h3', { className: 'text-base font-semibold text-on-surface' }, t.checkupGuideTitle),
+        h('p', { className: 'mt-1 max-w-3xl text-sm leading-6 text-on-surface-variant' }, t.checkupGuideBody)
+      ]),
+      h('div', { className: 'flex shrink-0 flex-wrap gap-2' }, [
+        h('a', {
+          className: 'inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-on-primary shadow-sm transition hover:opacity-90',
+          'data-action': 'open-agent-checkup-guide',
+          'data-agent-id': agent.agent_id,
+          href: `/agents/${encodeURIComponent(agent.agent_id)}/health-report`
+        }, [
+          h(MaterialIcon, { className: 'text-[18px]', name: 'play_circle' }),
+          h('span', null, t.checkupGuidePrimary)
+        ]),
+        h('a', {
+          className: 'inline-flex items-center gap-2 rounded-xl border border-outline-variant/40 bg-white/80 px-4 py-2 text-sm font-semibold text-on-surface transition hover:border-primary/40',
+          'data-action': 'open-agent-setup-wizard',
+          'data-agent-id': agent.agent_id,
+          href: `/agents/${encodeURIComponent(agent.agent_id)}/setup`,
+          onClick: (event) => {
+            event.preventDefault();
+            onOpenSetupWizard?.(agent.agent_id);
+          }
+        }, [
+          h(MaterialIcon, { className: 'text-[18px]', name: 'settings' }),
+          h('span', null, t.checkupGuideSecondary)
+        ])
+      ])
+    ])
+  ]);
+}
+
 function AgentFleet({ agents, onOpenSetupWizard, t }) {
   const descriptions = {
     claude_code: t.descClaudeCode,
@@ -1114,6 +1171,7 @@ function AgentFleet({ agents, onOpenSetupWizard, t }) {
     openclaw: t.descOpenClaw,
     hermes: t.descHermes
   };
+  const guideAgent = agents.find((agent) => agent.connected && agent.stats.total === 0) ?? null;
   return h('section', { id: 'agents', className: 'space-y-8' }, [
     h('div', { className: 'flex justify-between items-end' }, [
       h('div', null, [
@@ -1137,6 +1195,7 @@ function AgentFleet({ agents, onOpenSetupWizard, t }) {
         }, [h(MaterialIcon, { className: 'text-base', name: 'add' }), h('span', { className: 'font-label-caps text-label-caps' }, t.deployNew)])
       ])
     ]),
+    h(CheckupGuide, { agent: guideAgent, key: 'checkup-guide', onOpenSetupWizard, t }),
     h('div', { className: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-gutter' }, [
       ...agents.slice(0, 3).map((agent, i) => h(AgentCard, {
         accent: i === 0,
@@ -1462,7 +1521,12 @@ function ConfidenceBars({ chartPoints, t }) {
   }));
 }
 
-function RunInbox({ sessions, selectedSessionId, onSelect, runSearch, setRunSearch, runFilter, setRunFilter, t }) {
+function traceHrefForSession(sessionId, dbPath) {
+  const base = `/traces?session=${encodeURIComponent(sessionId)}`;
+  return dbPath ? `${base}&db=${encodeURIComponent(dbPath)}` : base;
+}
+
+function RunInbox({ sessions, selectedSessionId, onSelect, runSearch, setRunSearch, runFilter, setRunFilter, dbPath, t }) {
   return h('section', { className: 'glass-card-strong overflow-hidden rounded-3xl lg:col-span-8', id: 'sessions' }, [
     h('div', { className: 'flex flex-wrap items-center justify-between gap-3 border-b border-white/40 px-lg py-md' }, [
       h('h3', { className: 'text-h3 font-h3 tracking-tight' }, t.runInbox),
@@ -1513,7 +1577,14 @@ function RunInbox({ sessions, selectedSessionId, onSelect, runSearch, setRunSear
                   key: session.session_id,
                   onClick: () => onSelect(session.session_id)
                 }, [
-                  h('td', { className: 'p-md font-mono text-mono text-primary' }, `#${session.session_id}`),
+                  h('td', { className: 'p-md font-mono text-mono' },
+                    h('a', {
+                      className: 'text-primary hover:underline',
+                      'data-action': 'open-run-trace',
+                      href: traceHrefForSession(session.session_id, dbPath),
+                      onClick: (event) => event.stopPropagation()
+                    }, `#${session.session_id}`)
+                  ),
                   h('td', { className: 'p-md' },
                     h('span', { className: 'flex items-center gap-2' }, [statusDot(verdict.tone), h('span', null, verdict.label)])
                   ),
@@ -1586,6 +1657,17 @@ function QualityInspector({ session, t }) {
             ? h('span', { className: 'text-sm text-outline' }, t.noSignal)
             : (quality.reasons || []).map((r) => chip(r, 'neutral', r))
         )
+      ]),
+      h('div', null, [
+        h('h4', { className: 'mb-2 text-label-caps font-label-caps uppercase text-outline' }, t.scoreContributions),
+        (quality.score_contributions || []).length === 0
+          ? h('p', { className: 'rounded-2xl bg-surface-container-low/60 p-3 text-sm text-outline' }, t.noSignal)
+          : h('div', { className: 'grid gap-2' }, (quality.score_contributions || []).slice(0, 6).map((item) =>
+              h('div', { className: 'flex items-center justify-between rounded-xl bg-surface-container-low/60 px-3 py-2 text-sm', key: item.reason }, [
+                h('span', { className: 'truncate text-on-surface-variant' }, item.reason),
+                h('span', { className: `font-mono text-mono font-bold ${Number(item.impact) >= 0 ? 'text-green-700' : 'text-error'}` }, `${Number(item.impact) >= 0 ? '+' : ''}${item.impact}`)
+              ])
+            ))
       ]),
       h('div', null, [
         h('h4', { className: 'mb-2 text-label-caps font-label-caps uppercase text-outline' }, t.recommendations),
@@ -1696,7 +1778,7 @@ function AgentCapabilityOverview({ stats, t }) {
   ]);
 }
 
-function SessionsDetail({ selectedAgent, agents, agentSessions, visibleSessions, selectedSession, selectedSessionId, selectSession, selectedEvents, runFilter, setRunFilter, runSearch, setRunSearch, eventSearch, setEventSearch, eventTypeFilter, setEventTypeFilter, t }) {
+function SessionsDetail({ selectedAgent, agents, agentSessions, visibleSessions, selectedSession, selectedSessionId, selectSession, selectedEvents, runFilter, setRunFilter, runSearch, setRunSearch, eventSearch, setEventSearch, eventTypeFilter, setEventTypeFilter, dbPath, t }) {
   const allStats = calcStats(agentSessions);
   const chartPoints = groupRunsForChart(visibleSessions.length ? visibleSessions : agentSessions);
   return h('div', { className: 'space-y-lg' }, [
@@ -1782,7 +1864,7 @@ function SessionsDetail({ selectedAgent, agents, agentSessions, visibleSessions,
       ])
     ]),
     h('div', { className: 'grid grid-cols-1 lg:grid-cols-12 gap-gutter items-start' }, [
-      h(RunInbox, { key: 'inbox', sessions: visibleSessions, selectedSessionId, onSelect: selectSession, runSearch, setRunSearch, runFilter, setRunFilter, t }),
+      h(RunInbox, { dbPath, key: 'inbox', sessions: visibleSessions, selectedSessionId, onSelect: selectSession, runSearch, setRunSearch, runFilter, setRunFilter, t }),
       h(QualityInspector, { key: 'quality', session: selectedSession, t })
     ]),
     selectedSession ? h(Timeline, { events: selectedEvents, eventSearch, eventTypeFilter, key: 'timeline', session: selectedSession, setEventSearch, setEventTypeFilter, t }) : null
@@ -2247,7 +2329,7 @@ function phaseLabel(phase, t) {
   }[phase] ?? phase;
 }
 
-function CheckupProgressModal({ state, onClose, agentName, t }) {
+export function CheckupProgressModal({ state, onClose, agentName, t }) {
   if (!state.open) return null;
   const { phase, current, total, files, sessions, events, elapsedMs, result, error, hooksInstalled, lastFile } = state;
   const percent = total > 0 && phase === 'import' ? Math.min(100, Math.round((current / total) * 100)) : (result ? 100 : (phase === 'done' ? 100 : 8));
@@ -2273,11 +2355,14 @@ function CheckupProgressModal({ state, onClose, agentName, t }) {
       tabIndex: -1,
       type: 'button'
     }),
-    h('div', { className: 'relative w-full max-w-xl rounded-3xl bg-surface p-lg shadow-2xl' }, [
+    h('div', {
+      className: 'relative max-w-full min-w-0 rounded-3xl bg-surface p-md shadow-2xl sm:p-lg',
+      style: { width: 'min(36rem, calc(100vw - 2rem))' }
+    }, [
       h('div', { className: 'flex items-start justify-between gap-3 mb-md' }, [
-        h('div', null, [
+        h('div', { className: 'min-w-0' }, [
           h('p', { className: 'text-label-caps font-label-caps uppercase text-outline' }, t.checkupModalTitle),
-          h('h3', { id: 'checkup-modal-title', className: 'mt-1 text-h3 font-h3 tracking-tight' }, agentName)
+          h('h3', { id: 'checkup-modal-title', className: 'mt-1 break-words text-h3 font-h3 tracking-tight' }, agentName)
         ]),
         h(MaterialIcon, {
           className: `text-[24px] ${result ? 'text-green-500' : error ? 'text-error' : 'text-primary animate-spin'}`,
@@ -2293,8 +2378,8 @@ function CheckupProgressModal({ state, onClose, agentName, t }) {
         'data-checkup-phase': phase
       }, phaseLabel(phase, t)),
       total > 0 && phase === 'import' ? h('div', { className: 'mb-md' }, [
-        h('div', { className: 'mb-1 flex justify-between text-xs text-outline' }, [
-          h('span', null, lastFile ? lastFile.split('/').slice(-2).join('/') : ''),
+        h('div', { className: 'mb-1 flex min-w-0 justify-between gap-3 text-xs text-outline' }, [
+          h('span', { className: 'min-w-0 truncate' }, lastFile ? lastFile.split('/').slice(-2).join('/') : ''),
           h('span', { className: 'font-mono' }, `${current}/${total}`)
         ]),
         h('div', { className: 'h-2 overflow-hidden rounded-full bg-surface-container-low' },
@@ -2304,7 +2389,7 @@ function CheckupProgressModal({ state, onClose, agentName, t }) {
           })
         )
       ]) : null,
-      h('div', { className: 'mb-md grid grid-cols-4 gap-2 text-center' }, [
+      h('div', { className: 'mb-md grid grid-cols-2 gap-2 text-center sm:grid-cols-4' }, [
         h('div', { className: 'rounded-xl bg-surface-container-low/50 p-2', key: 'f' }, [
           h('p', { className: 'text-[10px] uppercase tracking-wider text-outline' }, t.checkupStat_files),
           h('p', { className: 'font-mono text-lg font-bold text-on-surface', 'data-checkup-files': true }, String(files ?? '—'))
@@ -2772,7 +2857,7 @@ export function RunInboxApp({ initialSessions = [], initialEvents = [], setupHea
       h(SessionsDetail, {
         agentSessions, eventSearch, eventTypeFilter, key: 'detail',
         agents, runFilter, runSearch, selectedAgent,
-        selectedEvents: events, selectedSession, selectedSessionId, selectSession,
+        dbPath, selectedEvents: events, selectedSession, selectedSessionId, selectSession,
         setEventSearch, setEventTypeFilter, setRunFilter, setRunSearch, t, visibleSessions
       })
     ],

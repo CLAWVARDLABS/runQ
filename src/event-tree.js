@@ -34,6 +34,7 @@ export function linkAgentEventParents(events) {
   let currentSession = null;
   let currentPrompt = null;
   let currentModelCall = null;
+  let currentToolCall = null;
   const toolStartByCallId = new Map();
   // Also index tool starts by command_id so command.* and file.changed events
   // emitted alongside a Bash/Edit tool call attach to the right parent.
@@ -60,25 +61,32 @@ export function linkAgentEventParents(events) {
       setParent(currentSession);
       currentPrompt = event;
       currentModelCall = null;
+      currentToolCall = null;
       continue;
     }
     if (type === 'model.call.started') {
       setParent(currentPrompt ?? currentSession);
       currentModelCall = event;
+      currentToolCall = null;
       continue;
     }
     if (type === 'model.call.ended') {
       setParent(currentModelCall ?? currentPrompt ?? currentSession);
+      if (!currentModelCall) currentModelCall = event;
+      currentToolCall = null;
       continue;
     }
     if (type === 'tool.call.started') {
       setParent(currentModelCall ?? currentPrompt ?? currentSession);
       if (payload.tool_call_id) toolStartByCallId.set(payload.tool_call_id, event);
+      currentToolCall = event;
       continue;
     }
     if (type === 'tool.call.ended') {
       const start = payload.tool_call_id ? toolStartByCallId.get(payload.tool_call_id) : null;
       setParent(start ?? currentModelCall ?? currentSession);
+      if (payload.tool_call_id) toolStartByCallId.set(payload.tool_call_id, start ?? event);
+      currentToolCall = start ?? event;
       continue;
     }
     if (type === 'command.started' || type === 'command.ended') {
@@ -86,7 +94,7 @@ export function linkAgentEventParents(events) {
       const start = callId
         ? toolStartByCallId.get(callId) ?? toolStartByCommandId.get(callId)
         : null;
-      setParent(start ?? currentModelCall ?? currentSession);
+      setParent(start ?? currentToolCall ?? currentModelCall ?? currentSession);
       if (type === 'command.started' && payload.command_id) {
         toolStartByCommandId.set(payload.command_id, event);
       }
@@ -97,7 +105,7 @@ export function linkAgentEventParents(events) {
       const start = callId
         ? toolStartByCallId.get(callId) ?? toolStartByCommandId.get(callId)
         : null;
-      setParent(start ?? currentModelCall ?? currentSession);
+      setParent(start ?? currentToolCall ?? currentModelCall ?? currentSession);
       continue;
     }
     if (type === 'session.ended') {
