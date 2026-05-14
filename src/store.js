@@ -53,6 +53,16 @@ export class RunqStore {
   }
 
   appendEvent(event) {
+    return this.#insertEvent(event, false);
+  }
+
+  // Idempotent variant used by batch importers (e.g. agent check-up). Returns
+  // true if the row was inserted, false if event_id already existed.
+  tryAppendEvent(event) {
+    return this.#insertEvent(event, true);
+  }
+
+  #insertEvent(event, ignoreDuplicate) {
     const storedEvent = redactEvent(event, this.#redactionPolicy);
     const validation = validateEvent(storedEvent);
     if (!validation.ok) {
@@ -60,7 +70,7 @@ export class RunqStore {
     }
 
     const insert = this.#db.prepare(`
-      INSERT INTO events (
+      INSERT ${ignoreDuplicate ? 'OR IGNORE ' : ''}INTO events (
         event_id,
         session_id,
         run_id,
@@ -75,7 +85,7 @@ export class RunqStore {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    insert.run(
+    const result = insert.run(
       storedEvent.event_id,
       storedEvent.session_id,
       storedEvent.run_id,
@@ -88,6 +98,7 @@ export class RunqStore {
       JSON.stringify(storedEvent.payload),
       JSON.stringify(storedEvent)
     );
+    return ignoreDuplicate ? Number(result?.changes ?? 0) > 0 : true;
   }
 
   listSessions() {

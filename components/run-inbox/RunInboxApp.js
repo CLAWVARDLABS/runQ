@@ -198,7 +198,33 @@ const copy = {
     descClaudeCode: '本地 Claude Code 终端编码',
     descCodex: 'Codex 命令行编码代理',
     descOpenClaw: '开源自主编码代理',
-    descHermes: '通用 hook 适配器'
+    descHermes: '通用 hook 适配器',
+    healthReportEyebrow: 'Agent 体检',
+    healthReportTitle: 'Agent 观测报告',
+    healthReportBody: '扫描 Agent 本地历史会话,回填到 RunQ 数据库,并给出一份针对该 Agent 的健康度报告。',
+    runCheckup: '对该 Agent 体检',
+    runCheckupAgain: '重新体检',
+    runningCheckup: '体检中…',
+    checkupResultPrefix: '已导入',
+    checkupResultEventsSuffix: '条新事件,跨',
+    checkupResultSessionsSuffix: '个会话',
+    checkupEmpty: '未发现本地历史会话',
+    checkupAbsent: 'Agent 未在本机安装',
+    checkupError: '体检失败',
+    sessionCount: '会话总数',
+    eventTotal: '事件总数',
+    timeRange: '时间跨度',
+    medianTrust: 'Trust Score 中位数',
+    topTools: '工具调用 Top 10',
+    activityRecent: '近 7 天活跃度',
+    trustDistribution: 'Trust Score 分布',
+    topSessions: '最高分会话',
+    bottomSessions: '最低分会话',
+    inputTokens: '输入 token',
+    outputTokens: '输出 token',
+    noToolCalls: '暂无工具调用记录',
+    noSessions: '暂无会话',
+    sourceLabel: '数据源'
   },
   en: {
     productName: 'RunQ',
@@ -386,7 +412,33 @@ const copy = {
     descClaudeCode: 'Claude Code terminal coding agent',
     descCodex: 'OpenAI Codex code automation',
     descOpenClaw: 'Open-source autonomous coding agent',
-    descHermes: 'Generic hook adapter'
+    descHermes: 'Generic hook adapter',
+    healthReportEyebrow: 'Agent Check-up',
+    healthReportTitle: 'Agent Health Report',
+    healthReportBody: 'Scan the agent\'s local history, backfill RunQ\'s database, and surface a per-agent observation report.',
+    runCheckup: 'Run check-up',
+    runCheckupAgain: 'Re-run check-up',
+    runningCheckup: 'Running…',
+    checkupResultPrefix: 'Imported',
+    checkupResultEventsSuffix: ' new event(s) across',
+    checkupResultSessionsSuffix: 'session(s)',
+    checkupEmpty: 'No historical sessions found locally',
+    checkupAbsent: 'Agent is not installed on this machine',
+    checkupError: 'Check-up failed',
+    sessionCount: 'Sessions',
+    eventTotal: 'Events',
+    timeRange: 'Time range',
+    medianTrust: 'Median trust score',
+    topTools: 'Top 10 tools',
+    activityRecent: 'Last 7 days activity',
+    trustDistribution: 'Trust score distribution',
+    topSessions: 'Top sessions',
+    bottomSessions: 'Lowest scoring sessions',
+    inputTokens: 'Input tokens',
+    outputTokens: 'Output tokens',
+    noToolCalls: 'No tool calls recorded yet',
+    noSessions: 'No sessions yet',
+    sourceLabel: 'Source'
   }
 };
 
@@ -891,6 +943,14 @@ function AgentCardActions({ agent, onOpenSetupWizard, t }) {
       href: `/agents/${encodeURIComponent(agent.agent_id)}/evaluations`,
       title: t.navEvaluations
     }, h(MaterialIcon, { className: 'text-[20px]', name: 'grading' })),
+    h('a', {
+      'aria-label': `${agent.display_name} ${t.healthReportTitle}`,
+      'data-action': 'open-agent-health-report',
+      'data-agent-id': agent.agent_id,
+      className: actionClass,
+      href: `/agents/${encodeURIComponent(agent.agent_id)}/health-report`,
+      title: t.healthReportTitle
+    }, h(MaterialIcon, { className: 'text-[20px]', name: 'health_and_safety' })),
     h('a', {
       'aria-label': `${agent.display_name} ${t.navSetup}`,
       'data-action': 'open-agent-setup-wizard',
@@ -2130,9 +2190,184 @@ function EvaluationsPage({ sessions, t }) {
   ]);
 }
 
+/* ---------------- Health Report ---------------- */
+
+function formatTokenCount(value) {
+  const n = Number(value || 0);
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+function HealthReportPage({ agentId, dbPath, initialReport, t, lang }) {
+  const [report, setReport] = useState(initialReport);
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+  const displayName = report?.display_name || agentMeta(agentId)[1];
+
+  const runCheckup = async () => {
+    setRunning(true);
+    setError(null);
+    setResult(null);
+    try {
+      const url = `/api/agents/${encodeURIComponent(agentId)}/checkup${dbPath ? `?db=${encodeURIComponent(dbPath)}` : ''}`;
+      const response = await fetch(url, { method: 'POST' });
+      const data = await response.json();
+      if (!response.ok) {
+        setError(data?.error || t.checkupError);
+      } else {
+        setResult(data);
+        // Refresh the page so server-side getAgentHealthReport re-runs.
+        if (typeof window !== 'undefined') {
+          window.location.reload();
+        }
+      }
+    } catch (err) {
+      setError(err?.message || t.checkupError);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const sessionCount = report?.session_count || 0;
+  const hasSessions = sessionCount > 0;
+
+  const headerActions = [
+    h('button', {
+      'data-action': 'run-agent-checkup',
+      'data-agent-id': agentId,
+      className: 'inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-on-primary shadow-sm transition hover:opacity-90 disabled:opacity-60',
+      disabled: running,
+      key: 'cta',
+      onClick: runCheckup,
+      type: 'button'
+    }, [
+      h(MaterialIcon, { className: 'text-[18px]', key: 'i', name: running ? 'sync' : 'health_and_safety' }),
+      running ? t.runningCheckup : (hasSessions ? t.runCheckupAgain : t.runCheckup)
+    ])
+  ];
+
+  const sourceChip = report?.first_seen
+    ? chip(`${t.sourceLabel}: ${report.session_count} session(s)`, 'info', 'src')
+    : chip(t.checkupEmpty, 'neutral', 'src');
+
+  const timeRangeLabel = (report?.first_seen && report?.last_seen)
+    ? `${String(report.first_seen).slice(0, 10)} → ${String(report.last_seen).slice(0, 10)}`
+    : '—';
+
+  const trustBuckets = Array.isArray(report?.trust_score_buckets) ? report.trust_score_buckets : [];
+  const maxBucketCount = trustBuckets.reduce((m, b) => Math.max(m, b.count), 0) || 1;
+
+  const activity = Array.isArray(report?.activity_by_day) ? report.activity_by_day : [];
+  const maxActivity = activity.reduce((m, b) => Math.max(m, b.count), 0) || 1;
+
+  const tools = Array.isArray(report?.tool_top) ? report.tool_top : [];
+  const maxToolCount = tools.reduce((m, b) => Math.max(m, b.count), 0) || 1;
+
+  const resultBanner = (() => {
+    if (error) return chip(`${t.checkupError}: ${error}`, 'bad', 'err');
+    if (!result) return null;
+    if (result.status === 'absent') return chip(t.checkupAbsent, 'warn', 'absent');
+    if (result.status === 'empty') return chip(t.checkupEmpty, 'neutral', 'empty');
+    const msg = `${t.checkupResultPrefix} ${result.imported_events}${t.checkupResultEventsSuffix} ${result.imported_sessions} ${t.checkupResultSessionsSuffix}`;
+    return chip(msg, 'good', 'ok');
+  })();
+
+  return h('section', { className: 'space-y-lg', id: 'health-report' }, [
+    h(PageHeader, {
+      eyebrow: `${t.healthReportEyebrow} · ${displayName}`,
+      title: `${displayName} ${t.healthReportTitle}`,
+      subtitle: t.healthReportBody,
+      actions: headerActions
+    }),
+    resultBanner ? h('div', { key: 'banner' }, resultBanner) : null,
+    h('div', { className: 'grid grid-cols-1 md:grid-cols-4 gap-gutter', key: 'stats' }, [
+      summaryStat(t.sessionCount, String(sessionCount), 'info', 'history'),
+      summaryStat(t.eventTotal, String(report?.event_count || 0), 'info', 'timeline'),
+      summaryStat(t.medianTrust, report?.trust_score_median == null ? '—' : `${report.trust_score_median}`, 'good', 'verified'),
+      summaryStat(t.timeRange, timeRangeLabel, 'neutral', 'date_range')
+    ]),
+    h('div', { className: 'grid grid-cols-1 lg:grid-cols-2 gap-gutter', key: 'charts' }, [
+      h('article', { className: 'glass-card rounded-3xl p-lg', key: 'trust' }, [
+        h('h3', { className: 'text-h3 font-h3 tracking-tight' }, t.trustDistribution),
+        h('div', { className: 'mt-md space-y-2' }, trustBuckets.map((b) =>
+          h('div', { className: 'flex items-center gap-3', key: b.bucket }, [
+            h('span', { className: 'w-16 font-mono text-mono text-outline' }, b.bucket),
+            h('div', { className: 'h-3 flex-1 overflow-hidden rounded-full bg-surface-container-low' },
+              h('div', {
+                className: 'h-full rounded-full bg-primary/70',
+                style: { width: `${(b.count / maxBucketCount) * 100}%` }
+              })
+            ),
+            h('span', { className: 'w-8 text-right text-sm text-on-surface' }, String(b.count))
+          ])
+        ))
+      ]),
+      h('article', { className: 'glass-card rounded-3xl p-lg', key: 'activity' }, [
+        h('h3', { className: 'text-h3 font-h3 tracking-tight' }, t.activityRecent),
+        h('div', { className: 'mt-md flex items-end gap-2 h-32' }, activity.map((b) =>
+          h('div', { className: 'flex flex-1 flex-col items-center gap-1', key: b.date }, [
+            h('div', { className: 'w-full rounded-t bg-primary/70 transition-all', style: { height: `${(b.count / maxActivity) * 100}%`, minHeight: b.count > 0 ? '4px' : '0' } }),
+            h('span', { className: 'text-[10px] text-outline' }, String(b.date).slice(5))
+          ])
+        ))
+      ])
+    ]),
+    h('article', { className: 'glass-card rounded-3xl p-lg', key: 'tools' }, [
+      h('h3', { className: 'text-h3 font-h3 tracking-tight' }, t.topTools),
+      tools.length === 0
+        ? h('p', { className: 'mt-md text-sm text-outline' }, t.noToolCalls)
+        : h('ul', { className: 'mt-md space-y-2' }, tools.map((row) =>
+            h('li', { className: 'flex items-center gap-3', key: row.tool }, [
+              h('span', { className: 'w-48 truncate font-mono text-mono text-on-surface' }, row.tool),
+              h('div', { className: 'h-3 flex-1 overflow-hidden rounded-full bg-surface-container-low' },
+                h('div', { className: 'h-full rounded-full bg-primary/70', style: { width: `${(row.count / maxToolCount) * 100}%` } })
+              ),
+              h('span', { className: 'w-12 text-right text-sm text-on-surface' }, String(row.count))
+            ])
+          ))
+    ]),
+    h('div', { className: 'grid grid-cols-1 lg:grid-cols-2 gap-gutter', key: 'sessions' }, [
+      h('article', { className: 'glass-card rounded-3xl p-lg', key: 'top' }, [
+        h('h3', { className: 'text-h3 font-h3 tracking-tight' }, t.topSessions),
+        (report?.top_sessions || []).length === 0
+          ? h('p', { className: 'mt-md text-sm text-outline' }, t.noSessions)
+          : h('ul', { className: 'mt-md space-y-2' }, report.top_sessions.map((s) =>
+              h('li', { className: 'flex items-center justify-between gap-2 rounded-xl border border-outline-variant/30 bg-white/60 p-3', key: s.session_id }, [
+                h('a', {
+                  className: 'font-mono text-mono text-primary hover:underline',
+                  href: `/traces?session=${encodeURIComponent(s.session_id)}${dbPath ? `&db=${encodeURIComponent(dbPath)}` : ''}`
+                }, `#${String(s.session_id).slice(0, 16)}`),
+                h('span', { className: 'font-mono text-mono text-on-surface' }, `trust ${s.trust_score}`)
+              ])
+            ))
+      ]),
+      h('article', { className: 'glass-card rounded-3xl p-lg', key: 'bottom' }, [
+        h('h3', { className: 'text-h3 font-h3 tracking-tight' }, t.bottomSessions),
+        (report?.bottom_sessions || []).length === 0
+          ? h('p', { className: 'mt-md text-sm text-outline' }, t.noSessions)
+          : h('ul', { className: 'mt-md space-y-2' }, report.bottom_sessions.map((s) =>
+              h('li', { className: 'flex items-center justify-between gap-2 rounded-xl border border-outline-variant/30 bg-white/60 p-3', key: s.session_id }, [
+                h('a', {
+                  className: 'font-mono text-mono text-primary hover:underline',
+                  href: `/traces?session=${encodeURIComponent(s.session_id)}${dbPath ? `&db=${encodeURIComponent(dbPath)}` : ''}`
+                }, `#${String(s.session_id).slice(0, 16)}`),
+                h('span', { className: 'font-mono text-mono text-on-surface' }, `trust ${s.trust_score}`)
+              ])
+            ))
+      ])
+    ]),
+    h('div', { className: 'grid grid-cols-1 md:grid-cols-2 gap-gutter', key: 'tokens' }, [
+      summaryStat(t.inputTokens, formatTokenCount(report?.total_input_tokens), 'info', 'input'),
+      summaryStat(t.outputTokens, formatTokenCount(report?.total_output_tokens), 'info', 'output')
+    ])
+  ]);
+}
+
 /* ---------------- App Root ---------------- */
 
-export function RunInboxApp({ initialSessions = [], initialEvents = [], setupHealth = null, activeView = 'agents', initialLang = 'zh', initialAgentId = null, initialRunSearch = '', dbPath = '', dataSources = [] }) {
+export function RunInboxApp({ initialSessions = [], initialEvents = [], setupHealth = null, activeView = 'agents', initialLang = 'zh', initialAgentId = null, initialRunSearch = '', dbPath = '', dataSources = [], initialHealthReport = null }) {
   const [lang, setLangState] = useState(() => normalizeLang(initialLang));
   const t = copy[lang];
   const [sessions, setSessions] = useState(initialSessions);
@@ -2313,7 +2548,15 @@ export function RunInboxApp({ initialSessions = [], initialEvents = [], setupHea
       })
     ],
     setup: [h(SetupPage, { copiedSetupCommand, key: 'setup', onCopySetupCommand: copySetupCommand, selectedSetupAgentId, setSelectedSetupAgentId, setupAgentId: initialAgentId, setupHealth, t })],
-    docs: [h(DocsPage, { key: 'docs', t })]
+    docs: [h(DocsPage, { key: 'docs', t })],
+    'health-report': [h(HealthReportPage, {
+      agentId: initialAgentId,
+      dbPath,
+      initialReport: initialHealthReport,
+      key: 'health-report',
+      lang,
+      t
+    })]
   }[activeView] || [];
 
   const setupWizardOverlay = setupWizardOpen && activeView !== 'setup'
