@@ -450,6 +450,15 @@ function promptSummary(event, t) {
   return event?.payload?.prompt_summary || event?.payload?.task_summary || t.taskFallbackTitle;
 }
 
+// Task summaries can be up to ~160 chars (a prompt truncation). That's fine for
+// body copy, but as a section headline a long prompt makes the title wrap and
+// dominate the card. Clamp hard for headline use.
+function headlineText(text, maxLength = 64) {
+  const normalized = String(text ?? '').replace(/\s+/g, ' ').trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
 // Tasks are coarser-grained than "one per user.prompt.submitted". A real task
 // can span many prompts (clarifications, follow-ups, error fixes). Split only
 // at strong boundary signals:
@@ -1546,7 +1555,10 @@ function TaskFlow({ actions, selectedEventId, onSelectEvent, selectedTask, t, pr
     h('div', { className: 'mb-lg flex flex-wrap items-start justify-between gap-4' }, [
       h('div', null, [
         h('span', { className: 'text-label-caps font-label-caps uppercase text-primary' }, t.taskFlow),
-        h('h3', { className: 'mt-2 text-h3 font-h3 tracking-tight' }, selectedTask?.summary || t.taskFlow),
+        h('h3', {
+          className: 'mt-2 text-h3 font-h3 tracking-tight',
+          title: selectedTask?.summary || t.taskFlow
+        }, headlineText(selectedTask?.summary) || t.taskFlow),
         h('p', { className: 'mt-2 max-w-2xl text-sm leading-6 text-on-surface-variant' }, t.taskFlowBody)
       ]),
       h('div', { className: 'flex items-center gap-2' }, [
@@ -1574,7 +1586,7 @@ function TaskFlow({ actions, selectedEventId, onSelectEvent, selectedTask, t, pr
       onSelectEvent,
       selectedEventId,
       t,
-      title: selectedTask?.summary || t.taskFlow
+      title: headlineText(selectedTask?.summary) || t.taskFlow
     }) : null,
     actions.length === 0
       ? h('p', { className: 'rounded-2xl border border-dashed border-outline-variant/50 p-md text-sm text-outline' }, t.selectSession)
@@ -1668,7 +1680,10 @@ function RunSummaryPanel({ actions, selectedTask, session, t }) {
     h('div', { className: 'mb-md flex flex-wrap items-start justify-between gap-4' }, [
       h('div', null, [
         h('span', { className: 'text-label-caps font-label-caps uppercase text-primary' }, t.runSummary),
-        h('h3', { className: 'mt-2 text-h3 font-h3 tracking-tight' }, summary.request),
+        h('h3', {
+          className: 'mt-2 text-h3 font-h3 tracking-tight',
+          title: summary.request
+        }, headlineText(summary.request)),
         h('p', { className: 'mt-2 max-w-3xl text-sm leading-6 text-on-surface-variant' }, t.runSummaryBody)
       ]),
       chip(summary.evidenceLimited ? `${summary.confidence}% · ${t.evidenceLimited}` : `${summary.confidence}%`, summary.confidence >= 80 ? 'good' : summary.confidence >= 50 ? 'warn' : 'bad', 'confidence')
