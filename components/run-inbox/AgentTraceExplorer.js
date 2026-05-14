@@ -56,6 +56,7 @@ const traceCopy = {
     eventActionHelp: '原始事件是底层采集日志；流程节点是可视化后的任务步骤。',
     redactionNote: '内容已按 metadata-first 隐私策略隐藏，只保留摘要、计数或哈希。',
     actionCount: '流程节点',
+    flowTruncatedPrefix: '仅渲染前 ',
     rawEvents: '原始事件',
     tools: '工具',
     flowLaneModel: '模型层',
@@ -146,6 +147,7 @@ const traceCopy = {
     eventActionHelp: 'Raw events are captured telemetry logs; workflow nodes are the visualized task steps.',
     redactionNote: 'Content is hidden by the metadata-first privacy policy; only summaries, counts, or hashes are retained.',
     actionCount: 'Workflow nodes',
+    flowTruncatedPrefix: 'Showing first ',
     rawEvents: 'raw events',
     tools: 'Tools',
     flowLaneModel: 'Model',
@@ -206,6 +208,11 @@ const sidebarItems = [
 
 const SESSION_AUTO_REFRESH_MS = 10000;
 const EVENT_AUTO_REFRESH_MS = 3000;
+// For very long sessions (e.g. Codex rollouts with 1k+ tool calls), aggressive
+// polling and rendering all nodes makes the page unresponsive. Cap both.
+const EVENT_AUTO_REFRESH_MS_LARGE = 30000;
+const LARGE_EVENT_THRESHOLD = 500;
+const MAX_FLOW_NODES = 200;
 
 const traceGroups = [
   {
@@ -893,7 +900,12 @@ function StaticTaskWorkflow({ actions, selectedEventId, onSelectEvent }) {
 
 function TaskWorkflowCanvas({ actions, selectedEventId, onSelectEvent }) {
   const mounted = useMounted();
-  const nodes = useMemo(() => actions.map((action, index) => ({
+  // Cap node count so ReactFlow stays responsive on huge sessions.
+  const renderActions = useMemo(
+    () => actions.length > MAX_FLOW_NODES ? actions.slice(0, MAX_FLOW_NODES) : actions,
+    [actions]
+  );
+  const nodes = useMemo(() => renderActions.map((action, index) => ({
     id: action.event_id,
     type: 'taskAction',
     position: { x: 32 + index * 390, y: 48 },
@@ -902,17 +914,17 @@ function TaskWorkflowCanvas({ actions, selectedEventId, onSelectEvent }) {
       index,
       onSelect: onSelectEvent,
       selected: selectedEventId === action.event_id,
-      total: actions.length
+      total: renderActions.length
     }
-  })), [actions, onSelectEvent, selectedEventId]);
-  const edges = useMemo(() => actions.slice(1).map((action, index) => ({
-    id: `${actions[index].event_id}-${action.event_id}`,
-    source: actions[index].event_id,
+  })), [renderActions, onSelectEvent, selectedEventId]);
+  const edges = useMemo(() => renderActions.slice(1).map((action, index) => ({
+    id: `${renderActions[index].event_id}-${action.event_id}`,
+    source: renderActions[index].event_id,
     target: action.event_id,
     type: 'smoothstep',
     markerEnd: { type: MarkerType.ArrowClosed, color: '#0050CB' },
     style: { stroke: '#0050CB', strokeOpacity: 0.5, strokeWidth: 2 }
-  })), [actions]);
+  })), [renderActions]);
 
   return h('div', {
     className: 'overflow-hidden rounded-2xl border border-outline-variant/35 bg-surface-container-lowest/70',
@@ -944,7 +956,7 @@ function TaskWorkflowCanvas({ actions, selectedEventId, onSelectEvent }) {
             h(Controls, { showInteractive: false })
           ])
         )
-      : h(StaticTaskWorkflow, { actions, onSelectEvent, selectedEventId })
+      : h(StaticTaskWorkflow, { actions: renderActions, onSelectEvent, selectedEventId })
   ]);
 }
 
@@ -964,7 +976,10 @@ function TaskFlow({ actions, selectedEventId, onSelectEvent, selectedTask, t }) 
       ]),
       h('div', { className: 'flex gap-2' }, [
         chip(`${actions.length} ${t.actionCount}`, 'info', 'actions'),
-        chip(`${toolCount} ${t.tools}`, toolCount ? 'good' : 'neutral', 'tools')
+        chip(`${toolCount} ${t.tools}`, toolCount ? 'good' : 'neutral', 'tools'),
+        actions.length > MAX_FLOW_NODES
+          ? chip(`${t.flowTruncatedPrefix}${MAX_FLOW_NODES}/${actions.length}`, 'warn', 'truncated')
+          : null
       ])
     ]),
     actions.length === 0
@@ -1202,12 +1217,17 @@ export function AgentTraceExplorer({ initialSessions = [], initialEvents = [], i
 
   useEffect(() => {
     if (!selectedSessionId) return undefined;
+    // For very long timelines, polling every 3s would re-fetch + re-parse +
+    // re-render thousands of events and starve the main thread. Slow it down.
+    const interval = events.length > LARGE_EVENT_THRESHOLD
+      ? EVENT_AUTO_REFRESH_MS_LARGE
+      : EVENT_AUTO_REFRESH_MS;
     const timer = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       refreshEventsForSession(selectedSessionId).catch(() => {});
-    }, EVENT_AUTO_REFRESH_MS);
+    }, interval);
     return () => clearInterval(timer);
-  }, [selectedSessionId]);
+  }, [selectedSessionId, events.length]);
 
   function setLang(next) {
     const normalized = normalizeLang(next);
@@ -1248,7 +1268,15 @@ export function AgentTraceExplorer({ initialSessions = [], initialEvents = [], i
   async function refreshEventsForSession(sessionId) {
     const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/events`);
     const next = await response.json();
-    setEvents(next);
+    // Skip the state update — and the cascade of memo recomputes + ReactFlow
+    // rebuild — when the event count and last timestamp are unchanged.
+    // Cheap stable-snapshot check covers the common idle case.
+    setEvents((prev) => {
+      if (prev.length === next.length && prev[prev.length - 1]?.event_id === next[next.length - 1]?.event_id) {
+        return prev;
+      }
+      return next;
+    });
     return next;
   }
 
