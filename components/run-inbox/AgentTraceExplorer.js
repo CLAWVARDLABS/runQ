@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Background, Controls, Handle, MarkerType, Position, ReactFlow } from '@xyflow/react';
 
+import { linkAgentEventParents } from '../../src/event-tree.js';
 import { buildAgentActionFlow } from './action-flow.js';
 import { percent, summarizeEvent, trustBreakdownEntries, trustScoreValue } from './format.js';
 
@@ -68,6 +69,17 @@ const traceCopy = {
     taskList: '任务列表',
     taskFallbackTitle: '会话任务',
     taskPrompt: '用户需求',
+    taskPureChat: '纯对话',
+    taskStatus_success: '完成',
+    taskStatus_warn: '需复核',
+    taskStatus_abandoned: '中断',
+    taskStatus_in_progress: '进行中',
+    taskPromptCount: 'prompt',
+    taskToolCount: '工具',
+    taskNoTools: '无工具调用',
+    workflowExpand: '在弹窗中查看',
+    workflowExpandedTitle: '会话流程图',
+    workflowCloseExpanded: '关闭',
     evidenceTimeline: '证据时间线',
     groupedTraceEvents: '分组追踪事件',
     taskFlow: '任务流程图',
@@ -183,6 +195,17 @@ const traceCopy = {
     taskList: 'Task List',
     taskFallbackTitle: 'Session task',
     taskPrompt: 'User request',
+    taskPureChat: 'pure chat',
+    taskStatus_success: 'done',
+    taskStatus_warn: 'needs review',
+    taskStatus_abandoned: 'abandoned',
+    taskStatus_in_progress: 'in progress',
+    taskPromptCount: 'prompt',
+    taskToolCount: 'tools',
+    taskNoTools: 'no tool calls',
+    workflowExpand: 'Open in larger view',
+    workflowExpandedTitle: 'Session workflow',
+    workflowCloseExpanded: 'Close',
     evidenceTimeline: 'Evidence timeline',
     groupedTraceEvents: 'Grouped trace events',
     taskFlow: 'Task flow',
@@ -357,6 +380,34 @@ function groupEvents(events, t) {
   return [...groups, other].filter((g) => g.events.length > 0);
 }
 
+function eventGroupFor(event, t) {
+  const group = traceGroups.find((g) => g.match(event)) ?? { id: 'other', titleKey: 'other', icon: 'more_horiz', dot: 'bg-slate-200' };
+  return { ...group, title: t[group.titleKey] ?? t.other };
+}
+
+function eventsWithParentLinks(events = []) {
+  return linkAgentEventParents(events.map((event) => ({ ...event, payload: event.payload ? { ...event.payload } : {} })));
+}
+
+function buildEvidenceEventTree(events = []) {
+  const byId = new Map(events.map((event) => [event.event_id, event]));
+  const childrenByParent = new Map();
+  const roots = [];
+
+  for (const event of events) {
+    const parentId = event.parent_id;
+    if (parentId && byId.has(parentId) && parentId !== event.event_id) {
+      const children = childrenByParent.get(parentId) ?? [];
+      children.push(event);
+      childrenByParent.set(parentId, children);
+    } else {
+      roots.push(event);
+    }
+  }
+
+  return { roots, childrenByParent };
+}
+
 function eventFailed(event) {
   return event.event_type === 'command.ended' && Number(event.payload?.exit_code) !== 0;
 }
@@ -383,34 +434,149 @@ function promptSummary(event, t) {
   return event?.payload?.prompt_summary || event?.payload?.task_summary || t.taskFallbackTitle;
 }
 
+// Tasks are coarser-grained than "one per user.prompt.submitted". A real task
+// can span many prompts (clarifications, follow-ups, error fixes). Split only
+// at strong boundary signals:
+//   1. idle gap > 30 minutes between consecutive events
+//   2. a satisfaction.recorded event followed by a new user.prompt.submitted
+//   3. cwd_hash change between events (user switched repo / project)
+const TASK_IDLE_GAP_MS = 30 * 60 * 1000;
+
+function payloadCwdHash(event) {
+  return event?.payload?.cwd_hash ?? event?.repo?.root_hash ?? null;
+}
+
+function isStrongBoundary(prev, current, satisfactionSeen) {
+  if (!prev) return false;
+  const gap = eventSortValue(current) - eventSortValue(prev);
+  if (gap > TASK_IDLE_GAP_MS) return true;
+  if (satisfactionSeen && current.event_type === 'user.prompt.submitted') return true;
+  const a = payloadCwdHash(prev);
+  const b = payloadCwdHash(current);
+  if (a && b && a !== b) return true;
+  return false;
+}
+
+function fingerprintTools(taskEvents) {
+  const counts = new Map();
+  for (const event of taskEvents) {
+    if (event.event_type !== 'tool.call.started') continue;
+    const name = event.payload?.tool_name ?? 'unknown';
+    counts.set(name, (counts.get(name) || 0) + 1);
+  }
+  const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  return {
+    top: sorted.slice(0, 3).map(([tool]) => tool),
+    total: sorted.reduce((sum, [, c]) => sum + c, 0)
+  };
+}
+
+function deriveTaskStatus(taskEvents) {
+  const last = taskEvents.at(-1);
+  const satisfaction = [...taskEvents].reverse().find((e) => e.event_type === 'satisfaction.recorded');
+  if (satisfaction?.payload?.label === 'abandoned') return 'abandoned';
+  if (satisfaction?.payload?.label === 'accepted') return 'success';
+  const failedCommand = taskEvents.find((e) =>
+    e.event_type === 'command.ended' && Number(e.payload?.exit_code ?? 0) !== 0
+  );
+  if (failedCommand) return 'warn';
+  const outcome = [...taskEvents].reverse().find((e) => e.event_type === 'outcome.scored');
+  if (outcome) {
+    const score = Number(outcome.payload?.trust_score ?? outcome.payload?.outcome_confidence ?? 0);
+    if (score >= 80 || score >= 0.8) return 'success';
+    return 'warn';
+  }
+  if (last?.event_type === 'session.ended') return 'success';
+  return 'in_progress';
+}
+
+function formatDuration(ms) {
+  const seconds = Math.max(0, Math.round(ms / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const rem = minutes % 60;
+  return rem === 0 ? `${hours}h` : `${hours}h${rem}m`;
+}
+
+function timeOfDay(timestamp) {
+  if (!timestamp) return '';
+  const ts = String(timestamp);
+  return ts.length >= 16 ? ts.slice(11, 16) : ts;
+}
+
+function buildTask(id, index, taskEvents, t) {
+  const sorted = [...taskEvents].sort((a, b) => eventSortValue(a) - eventSortValue(b));
+  const first = sorted[0];
+  const last = sorted.at(-1);
+  const promptCount = sorted.filter((e) => e.event_type === 'user.prompt.submitted').length;
+  const tools = fingerprintTools(sorted);
+  const status = deriveTaskStatus(sorted);
+  const startedAt = first?.timestamp ?? null;
+  const endedAt = last?.timestamp ?? null;
+  const durationMs = startedAt && endedAt
+    ? Math.max(0, eventSortValue(last) - eventSortValue(first))
+    : 0;
+  const firstPrompt = sorted.find((e) => e.event_type === 'user.prompt.submitted');
+  const summary = promptSummary(firstPrompt ?? first, t);
+  const titleParts = tools.top.length > 0 ? tools.top : null;
+  const title = titleParts
+    ? titleParts.join(' · ')
+    : `${promptCount || 1} ${t.taskPrompt.toLowerCase()} · ${t.taskPureChat}`;
+  return {
+    id,
+    index,
+    title,
+    summary,
+    events: sorted,
+    started_at: startedAt,
+    ended_at: endedAt,
+    duration_ms: durationMs,
+    prompt_count: promptCount,
+    tool_count: tools.total,
+    top_tools: tools.top,
+    status
+  };
+}
+
 function buildSessionTasks(events, t) {
   const sorted = [...events].sort((a, b) => eventSortValue(a) - eventSortValue(b));
-  const promptIndexes = sorted
-    .map((event, index) => event.event_type === 'user.prompt.submitted' ? index : -1)
-    .filter((index) => index >= 0);
-
-  if (promptIndexes.length === 0) {
+  if (sorted.length === 0) {
     return [{
       id: 'task_1',
       index: 1,
-      title: sorted[0]?.payload?.task_summary || t.taskFallbackTitle,
-      summary: sorted[0]?.payload?.task_summary || t.selectSession,
-      events: sorted
+      title: t.taskFallbackTitle,
+      summary: t.selectSession,
+      events: [],
+      started_at: null,
+      ended_at: null,
+      duration_ms: 0,
+      prompt_count: 0,
+      tool_count: 0,
+      top_tools: [],
+      status: 'in_progress'
     }];
   }
 
-  return promptIndexes.map((startIndex, index) => {
-    const nextStart = promptIndexes[index + 1] ?? sorted.length;
-    const taskEvents = sorted.slice(startIndex, nextStart);
-    const promptEvent = sorted[startIndex];
-    return {
-      id: `task_${index + 1}`,
-      index: index + 1,
-      title: `${t.taskPrompt} ${index + 1}`,
-      summary: promptSummary(promptEvent, t),
-      events: taskEvents
-    };
-  });
+  // Walk events. Cut a new task when a strong boundary signal fires.
+  const buckets = [];
+  let current = [];
+  let satisfactionSeenInCurrent = false;
+  let prev = null;
+  for (const event of sorted) {
+    if (prev && isStrongBoundary(prev, event, satisfactionSeenInCurrent)) {
+      if (current.length > 0) buckets.push(current);
+      current = [];
+      satisfactionSeenInCurrent = false;
+    }
+    current.push(event);
+    if (event.event_type === 'satisfaction.recorded') satisfactionSeenInCurrent = true;
+    prev = event;
+  }
+  if (current.length > 0) buckets.push(current);
+
+  return buckets.map((bucketEvents, idx) => buildTask(`task_${idx + 1}`, idx + 1, bucketEvents, t));
 }
 
 function buildTaskRecap(selectedTask, actions, t) {
@@ -693,8 +859,24 @@ function TaskList({ tasks, selectedTaskId, onSelectTask, t }) {
     ]),
     tasks.length === 0
       ? h('p', { className: 'rounded-2xl border border-dashed border-outline-variant/50 p-md text-sm text-outline' }, t.selectSession)
-      : h('div', { className: 'grid gap-2 sm:grid-cols-2' }, tasks.map((task) =>
-          h('button', {
+      : h('div', { className: 'grid gap-2 sm:grid-cols-2' }, tasks.map((task) => {
+          const statusTone = {
+            success: 'good',
+            warn: 'warn',
+            abandoned: 'bad',
+            in_progress: 'neutral'
+          }[task.status] || 'neutral';
+          const statusLabel = t[`taskStatus_${task.status}`] ?? task.status;
+          const timeRange = task.started_at
+            ? `${timeOfDay(task.started_at)}${task.ended_at && task.ended_at !== task.started_at ? ` → ${timeOfDay(task.ended_at)}` : ''}`
+            : null;
+          const meta = [
+            timeRange,
+            task.duration_ms > 0 ? formatDuration(task.duration_ms) : null,
+            task.prompt_count > 0 ? `${task.prompt_count} ${t.taskPromptCount}` : null,
+            task.tool_count > 0 ? `${task.tool_count} ${t.taskToolCount}` : null
+          ].filter(Boolean).join(' · ');
+          return h('button', {
             className: [
               'rounded-2xl border p-md text-left transition-all',
               selectedTaskId === task.id
@@ -703,17 +885,24 @@ function TaskList({ tasks, selectedTaskId, onSelectTask, t }) {
             ].join(' '),
             'data-task-id': task.id,
             'data-selected': selectedTaskId === task.id ? 'true' : 'false',
+            'data-task-status': task.status,
             key: task.id,
             onClick: () => onSelectTask(task.id),
             type: 'button'
           }, [
             h('div', { className: 'mb-2 flex items-center justify-between gap-2' }, [
               h('span', { className: 'font-mono text-mono text-outline' }, String(task.index).padStart(2, '0')),
-              chip(`${task.events.length} ${t.rawEvents}`, 'neutral', 'events')
+              chip(statusLabel, statusTone, 'status')
             ]),
-            h('div', { className: 'line-clamp-2 text-sm font-semibold leading-6 text-on-surface' }, task.summary || task.title)
-          ])
-        ))
+            h('div', { className: 'line-clamp-1 text-sm font-semibold leading-6 text-on-surface' },
+              task.top_tools.length > 0 ? task.top_tools.join(' · ') : t.taskNoTools
+            ),
+            meta ? h('div', { className: 'mt-1 font-mono text-[11px] text-outline' }, meta) : null,
+            task.summary && task.summary !== t.taskFallbackTitle
+              ? h('div', { className: 'mt-2 line-clamp-2 text-xs text-on-surface-variant' }, task.summary)
+              : null
+          ]);
+        }))
   ]);
 }
 
@@ -814,6 +1003,64 @@ function TimelineGroup({ group, t, selectedEventId, onSelectEvent }) {
       )
     ])
   ]);
+}
+
+function EvidenceTreeNode({ event, childrenByParent, depth, selectedEventId, onSelectEvent, t }) {
+  const group = eventGroupFor(event, t);
+  const children = childrenByParent.get(event.event_id) ?? [];
+  return h('li', {
+    'data-event-tree-node': 'true',
+    'data-event-id': event.event_id,
+    'data-parent-id': event.parent_id || '',
+    'data-event-depth': String(depth),
+    className: 'relative'
+  }, [
+    h('div', { className: 'relative flex gap-3' }, [
+      depth > 0
+        ? h('span', { className: 'absolute -left-5 top-5 h-px w-5 bg-outline-variant/70', 'aria-hidden': 'true' })
+        : null,
+      h(TimelineEventCard, {
+        event,
+        group,
+        key: event.event_id,
+        onSelect: onSelectEvent,
+        selected: selectedEventId === event.event_id,
+        t
+      })
+    ]),
+    children.length > 0
+      ? h('ol', { className: 'ml-8 mt-3 space-y-3 border-l border-outline-variant/60 pl-5' }, children.map((child) =>
+          h(EvidenceTreeNode, {
+            childrenByParent,
+            depth: depth + 1,
+            event: child,
+            key: child.event_id,
+            onSelectEvent,
+            selectedEventId,
+            t
+          })
+        ))
+      : null
+  ]);
+}
+
+function EvidenceEventTree({ events, selectedEventId, onSelectEvent, t }) {
+  const tree = buildEvidenceEventTree(events);
+  return h('ol', {
+    className: 'space-y-4',
+    'data-evidence-list': 'event-tree',
+    'data-event-tree': 'true'
+  }, tree.roots.map((event) =>
+    h(EvidenceTreeNode, {
+      childrenByParent: tree.childrenByParent,
+      depth: 0,
+      event,
+      key: event.event_id,
+      onSelectEvent,
+      selectedEventId,
+      t
+    })
+  ));
 }
 
 function actionIcon(kind) {
@@ -983,7 +1230,13 @@ function TaskWorkflowNode({ data }) {
 const taskNodeTypes = { taskAction: TaskWorkflowNode };
 
 function StaticTaskWorkflow({ actions, selectedEventId, onSelectEvent }) {
-  const edges = actions.slice(1).map((action, index) => ({ from: actions[index], to: action }));
+  const tree = buildActionTree(actions);
+  const edges = [];
+  for (const [parentId, children] of tree.childrenByParent.entries()) {
+    const parent = actions.find((action) => action.event_id === parentId);
+    if (!parent) continue;
+    for (const child of children) edges.push({ from: parent, to: child });
+  }
   // Note: data-workflow-* viewport/canvas/interaction/node-size attributes live on the
   // wrapping TaskWorkflowCanvas outer div. Duplicating them here breaks Playwright
   // strict-mode locators pre-hydration when this static fallback is nested inside it.
@@ -1098,7 +1351,7 @@ function layoutActionTree(roots, childrenByParent) {
   return positions;
 }
 
-function TaskWorkflowCanvas({ actions, selectedEventId, onSelectEvent }) {
+function TaskWorkflowCanvas({ actions, selectedEventId, onSelectEvent, expanded = false }) {
   const mounted = useMounted();
   // Cap node count so ReactFlow stays responsive on huge sessions.
   const renderActions = useMemo(
@@ -1143,15 +1396,19 @@ function TaskWorkflowCanvas({ actions, selectedEventId, onSelectEvent }) {
   }, [tree]);
 
   return h('div', {
-    className: 'overflow-hidden rounded-2xl border border-outline-variant/35 bg-surface-container-lowest/70',
-    'data-workflow-canvas-height': 'compact',
+    className: `overflow-hidden rounded-2xl border border-outline-variant/35 bg-surface-container-lowest/70 ${expanded ? 'h-full' : ''}`,
+    'data-workflow-canvas-height': expanded ? 'expanded' : 'compact',
     'data-workflow-interaction': 'pan-drag-click',
     'data-workflow-node-size': 'readable',
     'data-workflow-viewport': 'content-first',
     'data-workflow-mount-state': mounted ? 'hydrated' : 'static'
   }, [
     mounted
-      ? h('div', { className: 'h-[310px]', 'data-flow-layout': 'timeline-graph', 'data-task-workflow': 'react-flow' },
+      ? h('div', {
+          className: expanded ? 'h-full' : 'h-[310px]',
+          'data-flow-layout': 'timeline-graph',
+          'data-task-workflow': 'react-flow'
+        },
           h(ReactFlow, {
             colorMode: 'light',
             defaultViewport: { x: 0, y: 0, zoom: 1 },
@@ -1176,7 +1433,55 @@ function TaskWorkflowCanvas({ actions, selectedEventId, onSelectEvent }) {
   ]);
 }
 
+function ExpandedWorkflowModal({ actions, onClose, onSelectEvent, selectedEventId, t, title }) {
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return h('div', {
+    className: 'fixed inset-0 z-50 flex items-center justify-center p-4',
+    'data-workflow-expanded': 'open',
+    role: 'dialog',
+    'aria-modal': 'true'
+  }, [
+    h('button', {
+      'aria-label': t.workflowCloseExpanded,
+      className: 'absolute inset-0 h-full w-full bg-slate-950/60 backdrop-blur-sm',
+      onClick: onClose,
+      tabIndex: -1,
+      type: 'button'
+    }),
+    h('div', {
+      className: 'relative flex h-[88vh] w-[92vw] max-w-[1600px] flex-col overflow-hidden rounded-3xl bg-surface shadow-2xl'
+    }, [
+      h('div', { className: 'flex items-center justify-between border-b border-outline-variant/40 px-lg py-md' }, [
+        h('div', null, [
+          h('span', { className: 'text-label-caps font-label-caps uppercase text-primary' }, t.workflowExpandedTitle),
+          h('h3', { className: 'mt-1 line-clamp-1 text-h3 font-h3 tracking-tight' }, title)
+        ]),
+        h('button', {
+          'aria-label': t.workflowCloseExpanded,
+          className: 'grid h-10 w-10 place-items-center rounded-full border border-outline-variant/40 bg-white text-on-surface shadow-sm hover:border-primary/40',
+          onClick: onClose,
+          type: 'button'
+        }, h(MaterialIcon, { className: 'text-[20px]', name: 'close' }))
+      ]),
+      h('div', { className: 'flex-1 overflow-hidden p-md', 'data-workflow-expanded-canvas': 'true' }, [
+        h(TaskWorkflowCanvas, {
+          actions,
+          expanded: true,
+          onSelectEvent,
+          selectedEventId
+        })
+      ])
+    ])
+  ]);
+}
+
 function TaskFlow({ actions, selectedEventId, onSelectEvent, selectedTask, t }) {
+  const [expanded, setExpanded] = useState(false);
   const toolCount = actions.filter((action) => action.kind === 'tool').length;
   const recap = buildTaskRecap(selectedTask, actions, t);
   return h('section', {
@@ -1190,14 +1495,33 @@ function TaskFlow({ actions, selectedEventId, onSelectEvent, selectedTask, t }) 
         h('h3', { className: 'mt-2 text-h3 font-h3 tracking-tight' }, selectedTask?.summary || t.taskFlow),
         h('p', { className: 'mt-2 max-w-2xl text-sm leading-6 text-on-surface-variant' }, t.taskFlowBody)
       ]),
-      h('div', { className: 'flex gap-2' }, [
+      h('div', { className: 'flex items-center gap-2' }, [
         chip(`${actions.length} ${t.actionCount}`, 'info', 'actions'),
         chip(`${toolCount} ${t.tools}`, toolCount ? 'good' : 'neutral', 'tools'),
         actions.length > MAX_FLOW_NODES
           ? chip(`${t.flowTruncatedPrefix}${MAX_FLOW_NODES}/${actions.length}`, 'warn', 'truncated')
-          : null
+          : null,
+        actions.length > 0 ? h('button', {
+          'aria-label': t.workflowExpand,
+          'data-action': 'expand-workflow',
+          className: 'inline-flex items-center gap-1 rounded-full border border-outline-variant/40 bg-white px-3 py-1 text-[11px] font-semibold text-primary hover:border-primary/40',
+          onClick: () => setExpanded(true),
+          type: 'button'
+        }, [
+          h(MaterialIcon, { className: 'text-[14px]', name: 'open_in_full', key: 'i' }),
+          h('span', { key: 'l' }, t.workflowExpand)
+        ]) : null
       ])
     ]),
+    expanded ? h(ExpandedWorkflowModal, {
+      actions,
+      key: 'expanded',
+      onClose: () => setExpanded(false),
+      onSelectEvent,
+      selectedEventId,
+      t,
+      title: selectedTask?.summary || t.taskFlow
+    }) : null,
     actions.length === 0
       ? h('p', { className: 'rounded-2xl border border-dashed border-outline-variant/50 p-md text-sm text-outline' }, t.selectSession)
       : [
@@ -1947,7 +2271,7 @@ export function AgentTraceExplorer({ initialSessions = [], initialEvents = [], i
   const t = traceCopy[lang];
   const [sessions, setSessions] = useState(initialSessions);
   const [events, setEvents] = useState(initialEvents);
-  const initialSessionMatch = initialSessions.find((session) => session.session_id === initialSelectedSessionId) ?? null;
+  const initialSessionMatch = initialSessions.find((session) => session.session_id === initialSelectedSessionId) ?? initialSessions[0] ?? null;
   const [selectedAgent, setSelectedAgent] = useState(initialSessionMatch?.framework ?? initialSelectedAgent ?? null);
   const [selectedSessionId, setSelectedSessionId] = useState(initialSessionMatch?.session_id ?? null);
   const [query, setQuery] = useState('');
@@ -2017,11 +2341,11 @@ export function AgentTraceExplorer({ initialSessions = [], initialEvents = [], i
 
   const [paletteOpen, setPaletteOpen] = useState(false);
 
-  const groupedEvents = groupEvents(events, t);
-  const tasks = useMemo(() => buildSessionTasks(events, t), [events, t]);
+  const linkedEvents = useMemo(() => eventsWithParentLinks(events), [events]);
+  const tasks = useMemo(() => buildSessionTasks(linkedEvents, t), [linkedEvents, t]);
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? tasks[0] ?? null;
   const actionFlow = useMemo(() => buildAgentActionFlow(selectedTask?.events || []), [selectedTask]);
-  const selectedEvent = useMemo(() => events.find((e) => e.event_id === selectedEventId) ?? events[0] ?? null, [events, selectedEventId]);
+  const selectedEvent = useMemo(() => linkedEvents.find((e) => e.event_id === selectedEventId) ?? linkedEvents[0] ?? null, [linkedEvents, selectedEventId]);
   const notificationCount = sessions.reduce((sum, session) =>
     sum + (session.recommendations || []).filter((rec) => !rec.state || rec.state.status === 'new').length,
     0
@@ -2109,18 +2433,17 @@ export function AgentTraceExplorer({ initialSessions = [], initialEvents = [], i
               h('span', { className: 'text-label-caps font-label-caps uppercase text-primary' }, t.evidenceTimeline),
               h('h3', { className: 'mt-2 text-h3 font-h3 tracking-tight' }, t.groupedTraceEvents)
             ]),
-            groupedEvents.length === 0
+            linkedEvents.length === 0
               ? h('p', { className: 'glass-card rounded-3xl border-dashed p-lg text-sm text-outline' }, t.selectSession)
-              : h('div', { className: 'space-y-lg', 'data-evidence-list': 'event-groups' }, groupedEvents.map((g) =>
-                  h(TimelineGroup, {
-                    group: g, key: g.id,
-                    onSelectEvent: setSelectedEventId,
-                    selectedEventId: selectedEvent?.event_id ?? null, t
-                  })
-                ))
+              : h(EvidenceEventTree, {
+                  events: linkedEvents,
+                  onSelectEvent: setSelectedEventId,
+                  selectedEventId: selectedEvent?.event_id ?? null,
+                  t
+                })
           ]),
           h('aside', { className: 'lg:col-span-4 space-y-gutter' }, [
-            h(Inspector, { events, selectedEvent, session: selectedSession, t })
+            h(Inspector, { events: linkedEvents, selectedEvent, session: selectedSession, t })
           ])
         ])
       ])

@@ -82,7 +82,13 @@ export function hermesStateRowsToEvents(session, messages) {
       type: 'user.prompt.submitted',
       timestamp: toIso(firstUser.timestamp) ?? startedAt,
       parts: [sessionId, 'user.prompt.submitted', firstUser.id ?? firstUser.timestamp],
-      payload: { prompt_chars: String(firstUser.content ?? '').length }
+      payload: (() => {
+        const text = String(firstUser.content ?? '');
+        return {
+          prompt_length: text.length,
+          prompt_summary: text ? `Prompt captured · ${text.length} chars` : null
+        };
+      })()
     }));
   }
 

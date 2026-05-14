@@ -70,8 +70,11 @@ export function eventKind(event) {
 export function summarizeEvent(event) {
   const payload = event.payload || {};
   switch (event.event_type) {
-    case 'user.prompt.submitted':
-      return `${payload.prompt_summary || 'Prompt captured'} · ${payload.prompt_length || 0} chars`;
+    case 'user.prompt.submitted': {
+      // Accept either prompt_length (canonical) or prompt_chars (older imports).
+      const len = payload.prompt_length ?? payload.prompt_chars ?? 0;
+      return `${payload.prompt_summary || 'Prompt captured'} · ${len} chars`;
+    }
     case 'model.call.started':
       return [payload.provider, payload.model, payload.prompt_length ? `${payload.prompt_length} prompt chars` : null].filter(Boolean).join(' · ') || 'Model call started';
     case 'model.call.ended':

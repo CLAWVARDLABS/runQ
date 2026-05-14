@@ -97,7 +97,13 @@ export function codexRolloutRowsToEvents(rows, fallbackSessionId = null) {
       type: 'user.prompt.submitted',
       timestamp: firstUser.timestamp,
       parts: [sessionId, 'user.prompt.submitted', firstUser.timestamp],
-      payload: { prompt_chars: textOfMessage(firstUser.payload).length }
+      payload: (() => {
+        const text = textOfMessage(firstUser.payload);
+        return {
+          prompt_length: text.length,
+          prompt_summary: text ? `Prompt captured · ${text.length} chars` : null
+        };
+      })()
     }));
   }
 

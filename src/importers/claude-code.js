@@ -142,7 +142,8 @@ export function claudeCodeSessionRowsToEvents(rows, fallbackSessionId = null) {
       timestamp: firstUserPrompt.timestamp,
       parts: [sessionId, 'user.prompt.submitted', firstUserPrompt.timestamp],
       payload: {
-        prompt_chars: text.length
+        prompt_length: text.length,
+        prompt_summary: text ? `Prompt captured · ${text.length} chars` : null
       }
     }));
   }
