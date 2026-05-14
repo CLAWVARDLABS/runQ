@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
@@ -278,4 +278,44 @@ test('runAgentCheckup returns status=empty when agent installed but no history',
   const result = await runAgentCheckup('claude_code', { dbPath: join(h, 'runq.db'), homeDir: h });
   assert.equal(result.status, 'empty');
   assert.equal(result.scanned_files, 0);
+});
+
+test('runAgentCheckup installs RunQ hooks into the agent settings file', async () => {
+  const h = home();
+  mkdirSync(join(h, '.claude'), { recursive: true });
+  const result = await runAgentCheckup('claude_code', {
+    dbPath: join(h, 'runq.db'),
+    homeDir: h
+  });
+  assert.equal(result.hooks_installed, true, 'hooks_installed should be true');
+  const settings = JSON.parse(readFileSync(join(h, '.claude', 'settings.local.json'), 'utf8'));
+  assert.ok(settings.hooks?.SessionStart, 'SessionStart hook should be written');
+  assert.match(
+    settings.hooks.SessionStart[0].hooks[0].command,
+    /adapters\/claude-code\/hook\.js/
+  );
+});
+
+test('runAgentCheckup skips hook install when installHooks=false', async () => {
+  const h = home();
+  mkdirSync(join(h, '.claude'), { recursive: true });
+  const result = await runAgentCheckup('claude_code', {
+    dbPath: join(h, 'runq.db'),
+    homeDir: h,
+    installHooks: false
+  });
+  assert.equal(result.hooks_installed, false);
+  assert.equal(
+    existsSync(join(h, '.claude', 'settings.local.json')),
+    false,
+    'settings.local.json should not be written when installHooks=false'
+  );
+});
+
+test('runAgentCheckup absent result reports hooks_installed=false', async () => {
+  const h = home();
+  // No .codex dir at all
+  const result = await runAgentCheckup('codex', { dbPath: join(h, 'runq.db'), homeDir: h });
+  assert.equal(result.status, 'absent');
+  assert.equal(result.hooks_installed, false);
 });

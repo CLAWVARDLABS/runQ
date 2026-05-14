@@ -201,13 +201,14 @@ const copy = {
     descHermes: '通用 hook 适配器',
     healthReportEyebrow: 'Agent 体检',
     healthReportTitle: 'Agent 观测报告',
-    healthReportBody: '扫描 Agent 本地历史会话,回填到 RunQ 数据库,并给出一份针对该 Agent 的健康度报告。',
-    runCheckup: '对该 Agent 体检',
+    healthReportBody: '一键完成接入:装好 hooks,导入历史会话,给出该 Agent 的健康度报告。完成后新 session 会自动入库。',
+    runCheckup: '一键接入并体检',
     runCheckupAgain: '重新体检',
     runningCheckup: '体检中…',
     checkupResultPrefix: '已导入',
     checkupResultEventsSuffix: '条新事件,跨',
     checkupResultSessionsSuffix: '个会话',
+    checkupHooksInstalledSuffix: ' · 实时 hook 已就绪',
     checkupEmpty: '未发现本地历史会话',
     checkupAbsent: 'Agent 未在本机安装',
     checkupError: '体检失败',
@@ -415,13 +416,14 @@ const copy = {
     descHermes: 'Generic hook adapter',
     healthReportEyebrow: 'Agent Check-up',
     healthReportTitle: 'Agent Health Report',
-    healthReportBody: 'Scan the agent\'s local history, backfill RunQ\'s database, and surface a per-agent observation report.',
-    runCheckup: 'Run check-up',
+    healthReportBody: 'One-click onboarding: install hooks, backfill historical sessions, and surface a per-agent observation report. Future sessions stream in automatically.',
+    runCheckup: 'Connect & run check-up',
     runCheckupAgain: 'Re-run check-up',
     runningCheckup: 'Running…',
     checkupResultPrefix: 'Imported',
     checkupResultEventsSuffix: ' new event(s) across',
     checkupResultSessionsSuffix: 'session(s)',
+    checkupHooksInstalledSuffix: ' · live hook ready',
     checkupEmpty: 'No historical sessions found locally',
     checkupAbsent: 'Agent is not installed on this machine',
     checkupError: 'Check-up failed',
@@ -2269,8 +2271,12 @@ function HealthReportPage({ agentId, dbPath, initialReport, t, lang }) {
     if (error) return chip(`${t.checkupError}: ${error}`, 'bad', 'err');
     if (!result) return null;
     if (result.status === 'absent') return chip(t.checkupAbsent, 'warn', 'absent');
-    if (result.status === 'empty') return chip(t.checkupEmpty, 'neutral', 'empty');
-    const msg = `${t.checkupResultPrefix} ${result.imported_events}${t.checkupResultEventsSuffix} ${result.imported_sessions} ${t.checkupResultSessionsSuffix}`;
+    if (result.status === 'empty') {
+      const suffix = result.hooks_installed ? t.checkupHooksInstalledSuffix : '';
+      return chip(`${t.checkupEmpty}${suffix}`, result.hooks_installed ? 'info' : 'neutral', 'empty');
+    }
+    const hookSuffix = result.hooks_installed ? t.checkupHooksInstalledSuffix : '';
+    const msg = `${t.checkupResultPrefix} ${result.imported_events}${t.checkupResultEventsSuffix} ${result.imported_sessions} ${t.checkupResultSessionsSuffix}${hookSuffix}`;
     return chip(msg, 'good', 'ok');
   })();
 

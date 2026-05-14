@@ -1,3 +1,6 @@
+import { resolve } from 'node:path';
+
+import { initAgent } from './init.js';
 import { RunqStore } from './store.js';
 import {
   importClaudeCodeSessionFile,
@@ -16,6 +19,14 @@ import {
   hermesStatePath,
   importHermesState
 } from './importers/hermes.js';
+
+// Map RunQ framework ids (URL + DB column) to init.js target names.
+const INIT_TARGETS = {
+  claude_code: 'claude-code',
+  codex: 'codex',
+  openclaw: 'openclaw',
+  hermes: 'hermes'
+};
 
 // Public agent ids used in URLs / DB framework column. These match the
 // values RunInboxApp surfaces (knownAgents in components/run-inbox/format.js).
@@ -107,9 +118,36 @@ async function checkupHermes(store, homeDir) {
   return { files: sessions, ...result };
 }
 
+function installHooks(agentId, { dbPath, homeDir, runqRoot }) {
+  const target = INIT_TARGETS[agentId];
+  if (!target) return null;
+  try {
+    // initAgent force-writes for explicit single targets, so the hooks land
+    // even on a freshly-created home dir.
+    const result = initAgent(target, {
+      dbPath,
+      homeDir,
+      runqRoot: runqRoot ?? process.cwd()
+    });
+    const entries = Array.isArray(result) ? result : [result];
+    const target_entry = entries.find((entry) => entry.target === target) ?? entries[0];
+    return {
+      installed: Boolean(target_entry?.path),
+      path: target_entry?.path ?? null,
+      target,
+      skipped: Boolean(target_entry?.skipped),
+      reason: target_entry?.reason ?? null
+    };
+  } catch (error) {
+    return { installed: false, path: null, target, error: error?.message ?? 'init failed' };
+  }
+}
+
 export async function runAgentCheckup(agentId, {
   dbPath,
-  homeDir = process.env.HOME
+  homeDir = process.env.HOME,
+  runqRoot = process.cwd(),
+  installHooks: shouldInstallHooks = true
 } = {}) {
   if (!SUPPORTED_CHECKUP_AGENTS.includes(agentId)) {
     throw new Error(`Unsupported agent for checkup: ${agentId}`);
@@ -135,6 +173,8 @@ export async function runAgentCheckup(agentId, {
         skipped_events: 0,
         duration_ms: 0,
         source_dir: sourceDir,
+        hooks_installed: false,
+        hooks_path: null,
         message: `${agentId} is not installed locally (looked for ${sourceDir})`
       };
     }
@@ -148,10 +188,21 @@ export async function runAgentCheckup(agentId, {
       skipped_events: 0,
       duration_ms: 0,
       source_dir: sourceDir,
+      hooks_installed: false,
+      hooks_path: null,
       message: `Hermes is not installed locally (no ${sourceDir})`
     };
   }
 
+  // Step 1 — install hooks so future sessions stream into the same DB.
+  // Skipping this would mean the user is on a "static" backfill: the
+  // historical data we import now would never grow as new sessions happen.
+  const resolvedDbPath = resolve(dbPath);
+  const hooksResult = shouldInstallHooks
+    ? installHooks(agentId, { dbPath: resolvedDbPath, homeDir, runqRoot })
+    : null;
+
+  // Step 2 — backfill the historical sessions.
   const started = Date.now();
   const store = new RunqStore(dbPath);
   let result;
@@ -174,6 +225,8 @@ export async function runAgentCheckup(agentId, {
     skipped_events: result.skipped,
     duration_ms: duration,
     source_dir: sourceDir,
+    hooks_installed: Boolean(hooksResult?.installed),
+    hooks_path: hooksResult?.path ?? null,
     message: result.files === 0
       ? `No historical sessions found under ${sourceDir}`
       : `Imported ${result.inserted} new event(s) across ${result.sessionCount} session(s)`

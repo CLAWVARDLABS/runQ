@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { RunqStore } from '../src/store.js';
@@ -126,6 +127,83 @@ test('Trace explorer workflow is readable and opens node details from graph clic
   await page.locator('[data-flow-action-id="evt_e2e_model"]').click();
   await expect(page.locator('[data-selected-event-id="evt_e2e_model"]')).toBeVisible();
   await expect(page.getByText('model.call.ended').first()).toBeVisible();
+});
+
+test('Agent check-up onboards Claude Code: installs hooks and imports history end-to-end', async ({ page, request }) => {
+  // Spin up a clean HOME with a fake Claude Code transcript so the test is
+  // deterministic regardless of the developer's machine.
+  const tmpHome = mkdtempSync(join(tmpdir(), 'runq-e2e-home-'));
+  const projectDir = join(tmpHome, '.claude', 'projects', '-repo-fake');
+  mkdirSync(projectDir, { recursive: true });
+  const transcript = [
+    {
+      sessionId: 'ses_e2e_onboard',
+      cwd: '/repo/fake',
+      timestamp: '2026-05-12T10:00:00.000Z',
+      type: 'user',
+      message: { role: 'user', content: '帮我接入 RunQ' }
+    },
+    {
+      sessionId: 'ses_e2e_onboard',
+      timestamp: '2026-05-12T10:00:10.000Z',
+      message: {
+        id: 'msg_e2e_onboard_1',
+        role: 'assistant',
+        model: 'claude-opus-4-7',
+        content: [
+          { type: 'text', text: 'on it' },
+          { type: 'tool_use', id: 'too_e2e_onboard_1', name: 'Bash', input: { command: 'ls' } }
+        ],
+        usage: { input_tokens: 120, output_tokens: 40 }
+      }
+    },
+    {
+      sessionId: 'ses_e2e_onboard',
+      timestamp: '2026-05-12T10:00:12.000Z',
+      message: {
+        role: 'user',
+        content: [{ type: 'tool_result', tool_use_id: 'too_e2e_onboard_1', is_error: false }]
+      }
+    }
+  ];
+  writeFileSync(
+    join(projectDir, 'ses_e2e_onboard.jsonl'),
+    transcript.map((row) => JSON.stringify(row)).join('\n') + '\n'
+  );
+
+  // 1) POST the checkup API directly so we exercise the full server flow with
+  //    a controlled HOME. The CTA in the UI uses the same endpoint.
+  const checkupUrl = `/api/agents/claude_code/checkup?home=${encodeURIComponent(tmpHome)}&db=${encodeURIComponent(dbPath)}`;
+  const response = await request.post(checkupUrl);
+  expect(response.ok(), `checkup response ${response.status()}`).toBeTruthy();
+  const result = await response.json();
+  expect(result.status).toBe('success');
+  expect(result.hooks_installed).toBe(true);
+  expect(result.imported_sessions).toBeGreaterThanOrEqual(1);
+  expect(result.imported_events).toBeGreaterThanOrEqual(5);
+
+  // 2) Hooks must have been written into the tmp HOME's Claude settings file.
+  const settingsPath = join(tmpHome, '.claude', 'settings.local.json');
+  expect(existsSync(settingsPath)).toBe(true);
+  const settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
+  expect(settings.hooks?.SessionStart?.[0]?.hooks?.[0]?.command).toMatch(/adapters\/claude-code\/hook\.js/);
+
+  // 3) The imported session must show up on the health-report page (server-
+  //    rendered, reads the same RUNQ_DB the API just wrote to).
+  await page.goto('/agents/claude_code/health-report');
+  await expect(page.getByRole('heading', { name: /Claude Code/ })).toBeVisible();
+  // The summary stat tile labelled "会话总数" should now be 1.
+  await expect(page.getByText('会话总数')).toBeVisible();
+  // The top-tools panel should contain Bash from the synthetic transcript.
+  await expect(page.getByText('Bash').first()).toBeVisible();
+
+  // 4) Re-running the check-up is idempotent (zero new events).
+  const second = await request.post(checkupUrl);
+  expect(second.ok()).toBeTruthy();
+  const secondResult = await second.json();
+  expect(secondResult.imported_events).toBe(0);
+
+  rmSync(tmpHome, { recursive: true, force: true });
 });
 
 test('RunQ shell fits a mobile viewport without horizontal overflow', async ({ page }) => {
