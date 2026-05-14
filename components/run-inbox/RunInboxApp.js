@@ -1412,7 +1412,7 @@ function OnboardingProgressModal({ open, agents, onClose, t }) {
         const meta = agentMeta(id);
         const tone = r.state === 'done' ? 'good' : r.state === 'error' ? 'bad' : r.state === 'running' ? 'info' : 'neutral';
         const stateText = r.state === 'done'
-          ? `${t.onboardingAgentDone}${r.result?.imported_events ? ` · +${r.result.imported_events} 事件 / ${r.result.imported_sessions || 0} 会话` : ''}`
+          ? `${t.onboardingAgentDone}${r.result?.imported_events ? ` · +${r.result.imported_events} ${t.checkupStat_events} / ${r.result.imported_sessions || 0} ${t.checkupStat_sessions}` : ''}`
           : r.state === 'error'
             ? `${t.onboardingAgentFailed}: ${r.message || ''}`
             : r.state === 'running'
