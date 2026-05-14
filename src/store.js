@@ -5,6 +5,35 @@ import { DatabaseSync } from 'node:sqlite';
 import { validateEvent } from './schema.js';
 import { redactEvent } from './redaction.js';
 
+// Bump this when the on-disk schema changes and existing DBs need a migration.
+// Stored via SQLite's PRAGMA user_version; new DBs are created at SCHEMA_VERSION.
+const SCHEMA_VERSION = 1;
+
+// Hot fields lifted out of payload_json into typed columns. Keeping these as
+// real columns lets the dashboard and health-report aggregations run in SQL
+// (GROUP BY tool_name, etc.) instead of pulling every row into JS and parsing
+// JSON. The full payload still lives in payload_json for fidelity.
+const HOT_COLUMNS = [
+  { name: 'tool_name', type: 'TEXT' },
+  { name: 'model', type: 'TEXT' },
+  { name: 'status', type: 'TEXT' },
+  { name: 'exit_code', type: 'INTEGER' },
+  { name: 'duration_ms', type: 'INTEGER' },
+  { name: 'is_verification', type: 'INTEGER' }
+];
+
+function payloadHotFields(payload) {
+  const p = payload ?? {};
+  return {
+    tool_name: p.tool_name ?? null,
+    model: p.model ?? null,
+    status: p.status ?? null,
+    exit_code: p.exit_code === undefined || p.exit_code === null ? null : Number(p.exit_code),
+    duration_ms: p.duration_ms === undefined || p.duration_ms === null ? null : Number(p.duration_ms),
+    is_verification: p.is_verification === undefined ? null : (p.is_verification ? 1 : 0)
+  };
+}
+
 export class RunqStore {
   #db;
   #redactionPolicy;
@@ -18,9 +47,15 @@ export class RunqStore {
     mkdirSync(dirname(dbPath), { recursive: true });
     this.#db = new DatabaseSync(dbPath);
     this.#initialize();
+    this.#migrate();
   }
 
   #initialize() {
+    // WAL keeps readers from blocking the hook writer (and vice versa) — the
+    // common case is "hook is writing while the dashboard is polling reads".
+    this.#db.exec('PRAGMA journal_mode = WAL');
+    this.#db.exec('PRAGMA synchronous = NORMAL');
+
     this.#db.exec(`
       CREATE TABLE IF NOT EXISTS events (
         event_id TEXT PRIMARY KEY,
@@ -33,7 +68,13 @@ export class RunqStore {
         timestamp TEXT NOT NULL,
         privacy_level TEXT NOT NULL,
         payload_json TEXT NOT NULL,
-        event_json TEXT NOT NULL
+        event_json TEXT NOT NULL,
+        tool_name TEXT,
+        model TEXT,
+        status TEXT,
+        exit_code INTEGER,
+        duration_ms INTEGER,
+        is_verification INTEGER
       );
 
       CREATE INDEX IF NOT EXISTS idx_events_session_time
@@ -50,6 +91,54 @@ export class RunqStore {
         updated_at TEXT NOT NULL
       );
     `);
+  }
+
+  #migrate() {
+    const current = Number(this.#db.prepare('PRAGMA user_version').get().user_version ?? 0);
+    if (current >= SCHEMA_VERSION) return;
+
+    // Discover which hot columns are missing on a pre-existing events table
+    // (CREATE TABLE IF NOT EXISTS above won't re-add columns to an old table).
+    const existing = new Set(
+      this.#db.prepare('PRAGMA table_info(events)').all().map((row) => row.name)
+    );
+    for (const column of HOT_COLUMNS) {
+      if (!existing.has(column.name)) {
+        this.#db.exec(`ALTER TABLE events ADD COLUMN ${column.name} ${column.type}`);
+      }
+    }
+
+    // Backfill the new columns from payload_json in one shot using json1.
+    // Cheap: it's all in-engine. For ~100k events on local disk this is ~1s.
+    this.#db.exec(`
+      UPDATE events SET
+        tool_name = COALESCE(tool_name, json_extract(payload_json, '$.tool_name')),
+        model = COALESCE(model, json_extract(payload_json, '$.model')),
+        status = COALESCE(status, json_extract(payload_json, '$.status')),
+        exit_code = COALESCE(exit_code, json_extract(payload_json, '$.exit_code')),
+        duration_ms = COALESCE(duration_ms, json_extract(payload_json, '$.duration_ms')),
+        is_verification = COALESCE(is_verification,
+          CASE json_extract(payload_json, '$.is_verification')
+            WHEN 1 THEN 1
+            WHEN 0 THEN 0
+            WHEN 'true' THEN 1
+            WHEN 'false' THEN 0
+            ELSE NULL
+          END)
+      WHERE tool_name IS NULL OR model IS NULL OR status IS NULL
+        OR exit_code IS NULL OR duration_ms IS NULL OR is_verification IS NULL
+    `);
+
+    // Create the hot-column indexes only after the columns are guaranteed to
+    // exist (legacy DBs need the ALTER TABLE pass first).
+    this.#db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_events_framework_type_time
+        ON events (framework, event_type, timestamp);
+      CREATE INDEX IF NOT EXISTS idx_events_tool_name
+        ON events (tool_name) WHERE tool_name IS NOT NULL;
+    `);
+
+    this.#db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   }
 
   appendEvent(event) {
@@ -69,6 +158,8 @@ export class RunqStore {
       throw new Error(`Invalid RunQ event: ${validation.errors.join(', ')}`);
     }
 
+    const hot = payloadHotFields(storedEvent.payload);
+
     const insert = this.#db.prepare(`
       INSERT ${ignoreDuplicate ? 'OR IGNORE ' : ''}INTO events (
         event_id,
@@ -81,8 +172,14 @@ export class RunqStore {
         timestamp,
         privacy_level,
         payload_json,
-        event_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        event_json,
+        tool_name,
+        model,
+        status,
+        exit_code,
+        duration_ms,
+        is_verification
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = insert.run(
@@ -96,7 +193,13 @@ export class RunqStore {
       storedEvent.timestamp,
       storedEvent.privacy.level,
       JSON.stringify(storedEvent.payload),
-      JSON.stringify(storedEvent)
+      JSON.stringify(storedEvent),
+      hot.tool_name,
+      hot.model,
+      hot.status,
+      hot.exit_code,
+      hot.duration_ms,
+      hot.is_verification
     );
     return ignoreDuplicate ? Number(result?.changes ?? 0) > 0 : true;
   }
@@ -134,6 +237,25 @@ export class RunqStore {
     `);
 
     return select.all(sessionId).map((row) => JSON.parse(row.event_json));
+  }
+
+  // SQL-side aggregation of tool calls. Replaces a JS hot-loop that re-parsed
+  // every event JSON to count tool_name occurrences.
+  aggregateToolCalls(framework, { limit = 10 } = {}) {
+    const select = this.#db.prepare(`
+      SELECT tool_name, COUNT(*) AS count
+      FROM events
+      WHERE framework = ?
+        AND event_type = 'tool.call.started'
+        AND tool_name IS NOT NULL
+      GROUP BY tool_name
+      ORDER BY count DESC
+      LIMIT ?
+    `);
+    return select.all(framework, limit).map((row) => ({
+      tool: row.tool_name,
+      count: Number(row.count)
+    }));
   }
 
   getSessionMetrics(sessionId) {

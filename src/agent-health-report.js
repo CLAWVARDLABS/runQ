@@ -66,12 +66,12 @@ export function getAgentHealthReport(agentId, dbPath = defaultRunInboxDbPath()) 
     };
   }
 
-  // Aggregate tool usage with a single store open. For agents with thousands
-  // of sessions (Codex easily has 1000+ rollouts locally), opening/closing the
-  // store per session is the dominant cost.
+  // Aggregate tool usage and token totals in SQL — replaces a JS hot loop
+  // that re-parsed every event JSON. Hot columns + the
+  // (framework, event_type, timestamp) index make this O(matching rows).
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
-  const toolCounts = new Map();
+  let tool_top = [];
   const store = new RunqStore(dbPath);
   try {
     for (const session of sessions) {
@@ -79,20 +79,11 @@ export function getAgentHealthReport(agentId, dbPath = defaultRunInboxDbPath()) 
         totalInputTokens += Number(session.telemetry.input_tokens || 0);
         totalOutputTokens += Number(session.telemetry.output_tokens || 0);
       }
-      const events = store.listEventsForSession(session.session_id);
-      for (const event of events) {
-        if (event.event_type !== 'tool.call.started') continue;
-        const name = event.payload?.tool_name ?? 'unknown';
-        toolCounts.set(name, (toolCounts.get(name) || 0) + 1);
-      }
     }
+    tool_top = store.aggregateToolCalls(agentId, { limit: 10 });
   } finally {
     store.close();
   }
-  const tool_top = [...toolCounts.entries()]
-    .map(([tool, count]) => ({ tool, count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 10);
 
   const scores = sessions.map((session) => ({ session, score: trustScoreOf(session) }));
   scores.sort((a, b) => b.score - a.score);
