@@ -1351,8 +1351,9 @@ function layoutActionTree(roots, childrenByParent) {
   return positions;
 }
 
-function TaskWorkflowCanvas({ actions, selectedEventId, onSelectEvent, expanded = false }) {
+function TaskWorkflowCanvas({ actions, selectedEventId, onSelectEvent, expanded = false, onExpand, t = null }) {
   const mounted = useMounted();
+  const expandLabel = t?.workflowExpand ?? 'Open in larger view';
   // Cap node count so ReactFlow stays responsive on huge sessions.
   const renderActions = useMemo(
     () => actions.length > MAX_FLOW_NODES ? actions.slice(0, MAX_FLOW_NODES) : actions,
@@ -1396,13 +1397,26 @@ function TaskWorkflowCanvas({ actions, selectedEventId, onSelectEvent, expanded 
   }, [tree]);
 
   return h('div', {
-    className: `overflow-hidden rounded-2xl border border-outline-variant/35 bg-surface-container-lowest/70 ${expanded ? 'h-full' : ''}`,
+    className: `relative overflow-hidden rounded-2xl border border-outline-variant/35 bg-surface-container-lowest/70 ${expanded ? 'h-full' : ''}`,
     'data-workflow-canvas-height': expanded ? 'expanded' : 'compact',
     'data-workflow-interaction': 'pan-drag-click',
     'data-workflow-node-size': 'readable',
     'data-workflow-viewport': 'content-first',
     'data-workflow-mount-state': mounted ? 'hydrated' : 'static'
   }, [
+    !expanded && typeof onExpand === 'function' && actions.length > 0
+      ? h('button', {
+          'aria-label': expandLabel,
+          'data-action': 'expand-workflow-canvas',
+          className: 'absolute right-3 top-3 z-20 inline-flex items-center gap-1 rounded-full border border-outline-variant/40 bg-white/95 px-3 py-1 text-[11px] font-semibold text-primary shadow-sm transition hover:border-primary/40 hover:bg-white',
+          onClick: onExpand,
+          type: 'button',
+          title: expandLabel
+        }, [
+          h(MaterialIcon, { className: 'text-[14px]', key: 'i', name: 'open_in_full' }),
+          h('span', { key: 'l' }, expandLabel)
+        ])
+      : null,
     mounted
       ? h('div', {
           className: expanded ? 'h-full' : 'h-[310px]',
@@ -1554,7 +1568,14 @@ function TaskFlow({ actions, selectedEventId, onSelectEvent, selectedTask, t }) 
               : null
           ]),
           h('p', { className: 'mb-3 text-xs leading-5 text-outline', key: 'hint' }, [t.workflowHint, ' ', t.eventActionHelp]),
-          h(TaskWorkflowCanvas, { actions, key: selectedTask?.id || 'task-workflow', onSelectEvent, selectedEventId })
+          h(TaskWorkflowCanvas, {
+            actions,
+            key: selectedTask?.id || 'task-workflow',
+            onExpand: () => setExpanded(true),
+            onSelectEvent,
+            selectedEventId,
+            t
+          })
         ]
   ]);
 }
