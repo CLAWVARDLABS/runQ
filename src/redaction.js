@@ -19,6 +19,8 @@ const DEFAULT_SECRET_PATTERNS = [
 
 const SAFE_METADATA_KEYS = new Set([
   'args_hash',
+  'cache_creation_input_tokens',
+  'cache_read_input_tokens',
   'cache_read_tokens',
   'cache_write_tokens',
   'command_id',
@@ -28,7 +30,11 @@ const SAFE_METADATA_KEYS = new Set([
   'input_tokens',
   'output_hash',
   'output_tokens',
+  'prompt_chars',
+  'prompt_hash',
   'prompt_length',
+  'prompt_summary',
+  'reasoning_tokens',
   'stderr_hash',
   'stdout_hash',
   'total_tokens'

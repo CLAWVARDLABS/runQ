@@ -72,8 +72,16 @@ export function summarizeEvent(event) {
   switch (event.event_type) {
     case 'user.prompt.submitted': {
       // Accept either prompt_length (canonical) or prompt_chars (older imports).
-      const len = payload.prompt_length ?? payload.prompt_chars ?? 0;
-      return `${payload.prompt_summary || 'Prompt captured'} · ${len} chars`;
+      // Coerce: older redacted data may store these as the string "[redacted]".
+      const raw = payload.prompt_length ?? payload.prompt_chars;
+      const parsed = Number(raw);
+      const len = Number.isFinite(parsed) ? parsed : null;
+      const summary = typeof payload.prompt_summary === 'string' && !payload.prompt_summary.includes('[redacted]')
+        ? payload.prompt_summary
+        : 'Prompt captured';
+      return len === null
+        ? summary
+        : `${summary} · ${len} chars`;
     }
     case 'model.call.started':
       return [payload.provider, payload.model, payload.prompt_length ? `${payload.prompt_length} prompt chars` : null].filter(Boolean).join(' · ') || 'Model call started';
