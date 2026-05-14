@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { eventId, hash, privacyLevelFor, privacyRedactedFor, rawFields, textSummary } from '../normalize-utils.js';
+import { binaryFromCommand, eventId, hash, isVerificationCommand, privacyLevelFor, privacyRedactedFor, rawFields, textSummary } from '../normalize-utils.js';
 import { scoreRun } from '../scoring.js';
 import { linkAgentEventParents } from '../event-tree.js';
 
@@ -185,13 +185,51 @@ export function codexRolloutRowsToEvents(rows, fallbackSessionId = null, privacy
     }
   }
 
+  // Helpers — Codex's exec_command tool wraps shell invocations, so it carries
+  // the actual command string + working dir + exit code; surface those as
+  // command.* events so the trust-score pipeline can see verification runs
+  // (npm test / pytest / etc.) and exit codes that today only existed for
+  // Claude Code's Bash tool.
+  function parseArgs(raw) {
+    if (raw && typeof raw === 'object') return raw;
+    if (typeof raw !== 'string') return {};
+    try { return JSON.parse(raw); } catch { return {}; }
+  }
+  function pickShellCommand(args) {
+    if (typeof args?.cmd === 'string') return args.cmd;
+    if (Array.isArray(args?.cmd)) return args.cmd.join(' ');
+    if (typeof args?.command === 'string') return args.command;
+    if (Array.isArray(args?.command)) return args.command.join(' ');
+    return '';
+  }
+  function isShellTool(name) {
+    return name === 'exec_command' || name === 'shell' || name === 'bash';
+  }
+  function isFileMutationTool(name) {
+    return name === 'apply_patch' || name === 'write_file' || name === 'edit_file';
+  }
+  function extractExitCode(output) {
+    if (!output || typeof output !== 'object') return null;
+    if (typeof output.exit_code === 'number') return output.exit_code;
+    if (typeof output.metadata?.exit_code === 'number') return output.metadata.exit_code;
+    if (output.success === false) return 1;
+    return 0;
+  }
+
   // Tool (function) calls
   const pendingCalls = new Map();
   for (const row of rows) {
     if (row?.type !== 'response_item') continue;
     const p = row.payload;
     if (p?.type === 'function_call' && p?.call_id) {
-      pendingCalls.set(p.call_id, { name: p.name, timestamp: row.timestamp });
+      const args = parseArgs(p.arguments);
+      pendingCalls.set(p.call_id, {
+        name: p.name,
+        timestamp: row.timestamp,
+        args,
+        command: isShellTool(p.name) ? pickShellCommand(args) : '',
+        cwd: args?.workdir ?? args?.cwd ?? cwd
+      });
       events.push(makeEvent({
         sessionId,
         privacyMode,
@@ -204,11 +242,50 @@ export function codexRolloutRowsToEvents(rows, fallbackSessionId = null, privacy
           ...rawFields(privacyMode, { arguments: p.arguments })
         }
       }));
+      // Shell tool → also emit command.started so scoreRun sees a real
+      // command stream + can flag verification commands.
+      const pending = pendingCalls.get(p.call_id);
+      if (isShellTool(p.name) && pending.command) {
+        const verification = isVerificationCommand(pending.command);
+        events.push(makeEvent({
+          sessionId,
+          privacyMode,
+          type: 'command.started',
+          timestamp: row.timestamp,
+          parts: [sessionId, 'command.started', p.call_id],
+          payload: {
+            command_id: p.call_id,
+            command_kind: 'shell',
+            binary: binaryFromCommand(pending.command),
+            args_hash: hash(pending.command),
+            cwd_hash: hash(pending.cwd ?? ''),
+            is_verification: verification,
+            verification_kind: verification ? 'command' : undefined,
+            ...rawFields(privacyMode, { command: pending.command })
+          }
+        }));
+      }
+      // File-mutation tool → emit file.changed for each affected path.
+      if (isFileMutationTool(p.name)) {
+        const filePath = args?.path ?? args?.file_path ?? args?.target ?? '';
+        events.push(makeEvent({
+          sessionId,
+          privacyMode,
+          type: 'file.changed',
+          timestamp: row.timestamp,
+          parts: [sessionId, 'file.changed', p.call_id],
+          payload: {
+            path_hash: hash(filePath),
+            file_extension: (filePath.split('.').pop() || '').slice(0, 16) || undefined,
+            change_kind: p.name === 'write_file' ? 'written' : 'modified',
+            tool_name: p.name
+          }
+        }));
+      }
     } else if (p?.type === 'function_call_output' && p?.call_id) {
       const original = pendingCalls.get(p.call_id);
-      const status = p.output?.success === false || p.output?.metadata?.exit_code > 0
-        ? 'failed'
-        : 'completed';
+      const exitCode = extractExitCode(p.output);
+      const status = exitCode > 0 || p.output?.success === false ? 'failed' : 'completed';
       events.push(makeEvent({
         sessionId,
         privacyMode,
@@ -219,9 +296,32 @@ export function codexRolloutRowsToEvents(rows, fallbackSessionId = null, privacy
           tool_name: original?.name ?? null,
           tool_call_id: p.call_id,
           status,
+          exit_code: exitCode,
           ...rawFields(privacyMode, { output: p.output })
         }
       }));
+      // Pair with command.ended for shell tools so verification exit codes
+      // feed into trust score.
+      if (original && isShellTool(original.name) && original.command) {
+        const verification = isVerificationCommand(original.command);
+        events.push(makeEvent({
+          sessionId,
+          privacyMode,
+          type: 'command.ended',
+          timestamp: row.timestamp,
+          parts: [sessionId, 'command.ended', p.call_id],
+          payload: {
+            command_id: p.call_id,
+            command_kind: 'shell',
+            binary: binaryFromCommand(original.command),
+            args_hash: hash(original.command),
+            cwd_hash: hash(original.cwd ?? ''),
+            exit_code: exitCode,
+            is_verification: verification,
+            verification_kind: verification ? 'command' : undefined
+          }
+        }));
+      }
     }
   }
 

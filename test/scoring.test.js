@@ -240,7 +240,11 @@ test('scoreRun gives modest engagement credit only when a long session has no fa
 
   assert.equal(engaged.score_contributions.some((item) => item.reason === 'healthy_engagement' && item.impact > 0), true);
   assert.equal(engaged.trust_score > 55, true);
-  assert.equal(engaged.trust_score < 70, true);
+  // Cap raised from 70 → 75: scoring now rewards tool-call success rate and
+  // command-success rate more aggressively to widen the spread on imported
+  // sessions; sessions like this still cap under the no-verification ceiling
+  // (was 68, now 72).
+  assert.equal(engaged.trust_score <= 75, true);
   assert.equal(looping.score_contributions.some((item) => item.reason === 'healthy_engagement'), false);
   assert.equal(looping.reasons.includes('repeated_command_failure'), true);
 });

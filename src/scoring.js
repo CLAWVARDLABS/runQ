@@ -165,14 +165,22 @@ export function scoreRun(events) {
 
   if (commandEnded.length > 0) {
     const commandSuccessRate = passedCommands.length / commandEnded.length;
-    add('command_success_rate', Math.round(commandSuccessRate * 6));
-    const commandErrorPenalty = Math.min(12, (failedCommands.length / commandEnded.length) * 12);
+    add('command_success_rate', Math.round(commandSuccessRate * 12));
+    const commandErrorPenalty = Math.min(16, (failedCommands.length / commandEnded.length) * 16);
     add('command_failure_rate', -commandErrorPenalty);
   }
 
   if (toolEnded.length > 0) {
-    const toolErrorPenalty = Math.min(8, (toolErrors.length / toolEnded.length) * 8);
+    const toolSuccessRate = (toolEnded.length - toolErrors.length) / toolEnded.length;
+    add('tool_success_rate', Math.round(toolSuccessRate * 8));
+    const toolErrorPenalty = Math.min(12, (toolErrors.length / toolEnded.length) * 12);
     add('tool_failure_rate', -toolErrorPenalty);
+    // Tool diversity rewards multi-faceted work — a session that called many
+    // different tools generally did more than one that hammered the same one.
+    const distinctTools = new Set(toolEnded.map((e) => e.payload?.tool_name).filter(Boolean));
+    if (distinctTools.size >= 3) {
+      add('tool_diversity', Math.min(6, distinctTools.size - 2));
+    }
   }
 
   if (fileChanges.length > 0 && passedVerification.length > 0 && Number(latestVerification?.payload?.exit_code) === 0) {
@@ -196,8 +204,13 @@ export function scoreRun(events) {
 
   if (fileChanges.length > 0 && verificationCommands.length === 0) {
     verificationCoverage = 0;
-    reworkRisk = Math.max(reworkRisk, 0.75);
-    add('changes_without_verification', -22);
+    reworkRisk = Math.max(reworkRisk, 0.7);
+    // Softer penalty than before (-22): imported / backfilled sessions
+    // legitimately don't carry verification events because we never captured
+    // them — punishing every such session by -22 collapses the distribution
+    // to a tight band around 48. Tool-call success signals + diversity still
+    // discriminate good vs. bad runs.
+    add('changes_without_verification', -10);
     reasons.push('changes_without_verification');
   }
 
@@ -300,10 +313,14 @@ export function scoreRun(events) {
     trustScore = Math.min(trustScore, 88);
   }
   if (fileChanges.length > 0 && verificationCommands.length === 0) {
-    trustScore = Math.min(trustScore, 48);
+    // Cap raised from 48 → 70 so the tool-success-rate signals can lift a
+    // well-executed but untested session above the previous tight band.
+    // Sessions with verification still float higher; sessions with failed
+    // verification still bottom out below.
+    trustScore = Math.min(trustScore, 70);
   }
   if (fileChanges.length === 0 && verificationCommands.length === 0 && !satisfaction) {
-    trustScore = Math.min(trustScore, 68);
+    trustScore = Math.min(trustScore, 72);
   }
   if ([...failedCommandCounts.values()].some((count) => count >= 3)) {
     trustScore = Math.min(trustScore, 30);
