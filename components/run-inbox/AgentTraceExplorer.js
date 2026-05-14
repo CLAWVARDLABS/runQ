@@ -25,6 +25,28 @@ const traceCopy = {
     traceExplorer: '追踪视图',
     title: 'Agent 会话追踪',
     subtitle: '基于真实事件重建模型调用、命令、文件、验证和反馈组成的证据时间线。',
+    pickerBarLabel: '上下文选择',
+    pickerAgentLabel: 'Agent',
+    pickerSessionLabel: '会话',
+    pickerAgentPlaceholder: '选择一个 Agent…',
+    pickerSessionPlaceholder: '选择一次会话…',
+    pickerSessionDisabled: '先选一个 Agent',
+    pickerSearchAgents: '搜索 Agent / framework',
+    pickerSearchSessions: '搜索会话 ID / 状态',
+    pickerSearchAll: '跨 Agent 搜索会话',
+    pickerMostRecent: '最新会话',
+    pickerNoMatches: '没有匹配项',
+    pickerNoAgents: '当前数据库里还没有 Agent 会话',
+    pickerJumpHint: '⌘K 全局搜索',
+    pickerOpenLatest: '打开最新会话',
+    pickerEmptyMain: '选择一个 Agent 和会话来查看追踪',
+    pickerEmptyMainSub: '上方两个下拉是串行的：先选 Agent，再选会话。我们会按 framework 把会话归类。',
+    agentSessionCount: '会话',
+    agentAvgTrust: '平均信任分',
+    agentLastActive: '最近活动',
+    sessionDuration: '持续',
+    sessionEvents: '事件',
+    closeDialog: '关闭',
     eyebrow: 'Trace Telemetry',
     sessionList: '会话列表',
     allAgents: '全部 Agent',
@@ -116,6 +138,28 @@ const traceCopy = {
     traceExplorer: 'Trace Explorer',
     title: 'Agent Session Traces',
     subtitle: 'Evidence timeline reconstructed from real model, command, file, verification, and feedback events.',
+    pickerBarLabel: 'Context picker',
+    pickerAgentLabel: 'Agent',
+    pickerSessionLabel: 'Session',
+    pickerAgentPlaceholder: 'Pick an agent…',
+    pickerSessionPlaceholder: 'Pick a session…',
+    pickerSessionDisabled: 'Pick an agent first',
+    pickerSearchAgents: 'Search agents / framework',
+    pickerSearchSessions: 'Search session id / status',
+    pickerSearchAll: 'Search sessions across agents',
+    pickerMostRecent: 'Most recent',
+    pickerNoMatches: 'No matches',
+    pickerNoAgents: 'No agent sessions in this database yet',
+    pickerJumpHint: '⌘K to search',
+    pickerOpenLatest: 'Open latest session',
+    pickerEmptyMain: 'Pick an agent and a session to inspect a trace',
+    pickerEmptyMainSub: 'The two dropdowns above are chained — choose an agent first, then a session. Sessions are grouped by framework.',
+    agentSessionCount: 'sessions',
+    agentAvgTrust: 'Avg trust score',
+    agentLastActive: 'Last activity',
+    sessionDuration: 'Duration',
+    sessionEvents: 'events',
+    closeDialog: 'Close',
     eyebrow: 'Trace Telemetry',
     sessionList: 'Session List',
     allAgents: 'All agents',
@@ -422,6 +466,120 @@ function timeLabel(timestamp) {
   return date.toISOString().slice(11, 19);
 }
 
+function relativeTimeLabel(timestamp, lang) {
+  if (!timestamp) return '-';
+  const then = Date.parse(timestamp);
+  if (Number.isNaN(then)) return timestamp;
+  const diff = Date.now() - then;
+  if (diff < 0) return new Date(then).toISOString().slice(0, 16).replace('T', ' ');
+  const seconds = Math.round(diff / 1000);
+  if (seconds < 60) return lang === 'en' ? `${seconds}s ago` : `${seconds} 秒前`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return lang === 'en' ? `${minutes}m ago` : `${minutes} 分钟前`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return lang === 'en' ? `${hours}h ago` : `${hours} 小时前`;
+  const days = Math.round(hours / 24);
+  if (days < 30) return lang === 'en' ? `${days}d ago` : `${days} 天前`;
+  return new Date(then).toISOString().slice(0, 10);
+}
+
+function durationLabel(startedAt, endedAt) {
+  const start = Date.parse(startedAt || '');
+  const end = Date.parse(endedAt || '');
+  if (Number.isNaN(start) || Number.isNaN(end) || end < start) return '-';
+  const ms = end - start;
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  if (minutes < 60) return `${minutes}m ${rest}s`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
+}
+
+const frameworkIconMap = {
+  'claude-code': 'terminal',
+  'claude': 'auto_awesome',
+  'cursor': 'mouse',
+  'aider': 'edit_note',
+  'codex': 'code',
+  'gemini-cli': 'auto_awesome',
+  'openai-codex': 'code',
+  'cline': 'memory',
+  'continue': 'route'
+};
+
+function frameworkIcon(framework) {
+  const key = String(framework || '').toLowerCase();
+  if (frameworkIconMap[key]) return frameworkIconMap[key];
+  for (const known of Object.keys(frameworkIconMap)) {
+    if (key.includes(known)) return frameworkIconMap[known];
+  }
+  return 'smart_toy';
+}
+
+function frameworkAccent(framework) {
+  const palette = [
+    { ring: 'from-primary/30 via-primary/0 to-primary/0', icon: 'bg-primary/10 text-primary-container', dot: 'bg-primary' },
+    { ring: 'from-emerald-300/40 via-emerald-200/0 to-transparent', icon: 'bg-emerald-50 text-emerald-700', dot: 'bg-emerald-500' },
+    { ring: 'from-amber-300/40 via-amber-200/0 to-transparent', icon: 'bg-amber-50 text-amber-700', dot: 'bg-amber-500' },
+    { ring: 'from-violet-300/40 via-violet-200/0 to-transparent', icon: 'bg-violet-50 text-violet-700', dot: 'bg-violet-500' },
+    { ring: 'from-rose-300/40 via-rose-200/0 to-transparent', icon: 'bg-rose-50 text-rose-700', dot: 'bg-rose-500' },
+    { ring: 'from-sky-300/40 via-sky-200/0 to-transparent', icon: 'bg-sky-50 text-sky-700', dot: 'bg-sky-500' }
+  ];
+  let hash = 0;
+  const value = String(framework || '');
+  for (let i = 0; i < value.length; i += 1) hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
+  return palette[hash % palette.length];
+}
+
+function aggregateAgents(sessions) {
+  const map = new Map();
+  for (const session of sessions) {
+    const key = session.framework || 'unknown';
+    if (!map.has(key)) {
+      map.set(key, {
+        framework: key,
+        sessions: [],
+        totalEvents: 0,
+        totalTokens: 0,
+        trustSum: 0,
+        trustCount: 0,
+        failedVerifications: 0,
+        lastEventAt: ''
+      });
+    }
+    const bucket = map.get(key);
+    bucket.sessions.push(session);
+    bucket.totalEvents += Number(session.event_count || 0);
+    bucket.totalTokens += Number(session.telemetry?.total_tokens || 0);
+    bucket.failedVerifications += Number(session.telemetry?.verification_failed_count || 0);
+    const trust = trustScoreValue(session.quality);
+    if (trust > 0) {
+      bucket.trustSum += trust;
+      bucket.trustCount += 1;
+    }
+    const lastAt = session.last_event_at || session.started_at || '';
+    if (lastAt > bucket.lastEventAt) bucket.lastEventAt = lastAt;
+  }
+  return [...map.values()]
+    .map((bucket) => ({
+      ...bucket,
+      avgTrust: bucket.trustCount ? Math.round(bucket.trustSum / bucket.trustCount) : 0,
+      sessionCount: bucket.sessions.length
+    }))
+    .sort((a, b) => (b.lastEventAt || '').localeCompare(a.lastEventAt || ''));
+}
+
+function updateUrl(agent, sessionId) {
+  if (typeof window === 'undefined') return;
+  const params = new URLSearchParams(window.location.search);
+  if (agent) params.set('agent', agent); else params.delete('agent');
+  if (sessionId) params.set('session', sessionId); else params.delete('session');
+  const next = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}`;
+  window.history.replaceState(null, '', next);
+}
+
 function Sidebar({ activeView }) {
   return h('aside', {
     className: 'fixed left-0 top-0 z-50 flex h-screen w-20 flex-col items-center border-r border-white/30 bg-white/70 py-8 shadow-2xl shadow-primary/5 backdrop-blur-xl'
@@ -500,51 +658,6 @@ function TopBar({ t, lang, setLang, onRefresh, notificationCount = 0, searchQuer
           ? h('span', { className: 'absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full border-2 border-white bg-primary px-1 text-[9px] font-bold leading-none text-white', key: 'd' }, notificationCount > 9 ? '9+' : String(notificationCount))
           : null
       ])
-    ])
-  ]);
-}
-
-function SessionPicker({ sessions, selectedSessionId, onSelect, framework, setFramework, query, setQuery, t }) {
-  const frameworks = ['all', ...Array.from(new Set(sessions.map((s) => s.framework))).sort()];
-  return h('section', { className: 'glass-card rounded-3xl p-lg' }, [
-    h('div', { className: 'mb-md flex items-start justify-between gap-3' }, [
-      h('div', { className: 'min-w-0' }, [
-        h('div', { className: 'text-label-caps font-label-caps uppercase text-outline' }, t.sessionList),
-        h('h3', { className: 'mt-2 truncate text-h3 font-h3 tracking-tight' }, selectedSessionId || t.noSessionSelected)
-      ]),
-      h('span', { className: 'rounded-full bg-surface-container-low/80 px-2 py-1 font-mono text-mono text-outline' }, sessions.length)
-    ]),
-    h('div', { className: 'grid gap-2' }, [
-      h('select', {
-        className: 'w-full rounded-lg border-none bg-surface-container-low px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-primary',
-        onChange: (e) => setFramework(e.target.value),
-        value: framework
-      }, frameworks.map((value) => h('option', { key: value, value }, value === 'all' ? t.allAgents : value))),
-      h('div', { className: 'relative' }, [
-        h(MaterialIcon, { className: 'absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-outline', name: 'search' }),
-        h('input', {
-          className: 'w-full rounded-lg border-none bg-surface-container-low pl-10 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary',
-          onChange: (e) => setQuery(e.target.value),
-          placeholder: t.searchSession,
-          type: 'search',
-          value: query
-        })
-      ]),
-      sessions.length === 0
-        ? h('p', { className: 'rounded-2xl bg-surface-container-low/60 p-3 text-sm text-outline' }, t.noSessions)
-        : h('div', { className: 'max-h-72 space-y-1 overflow-auto' }, sessions.map((session) =>
-            h('button', {
-              className: [
-                'block w-full truncate rounded-xl border px-3 py-2 text-left font-mono text-mono transition-colors',
-                session.session_id === selectedSessionId
-                  ? 'border-primary bg-primary/5 text-primary-container'
-                  : 'border-outline-variant/40 bg-white/60 text-on-surface hover:border-primary/40'
-              ].join(' '),
-              key: session.session_id,
-              onClick: () => onSelect(session.session_id),
-              type: 'button'
-            }, `#${session.session_id}`)
-          ))
     ])
   ]);
 }
@@ -1111,6 +1224,543 @@ function RunSummaryPanel({ actions, selectedTask, session, t }) {
   ]);
 }
 
+function trustTone(score) {
+  if (score >= 80) return 'good';
+  if (score >= 50) return 'warn';
+  return 'bad';
+}
+
+function trustToneClass(score) {
+  const tone = trustTone(score);
+  if (tone === 'good') return 'text-green-700 bg-green-50 border-green-100';
+  if (tone === 'warn') return 'text-amber-700 bg-amber-50 border-amber-100';
+  return 'text-rose-700 bg-rose-50 border-rose-100';
+}
+
+function useClickOutside(open, onClose) {
+  const ref = React.useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    function handlePointer(event) {
+      if (!ref.current) return;
+      if (!ref.current.contains(event.target)) onClose();
+    }
+    function handleKey(event) {
+      if (event.key === 'Escape') onClose();
+    }
+    document.addEventListener('mousedown', handlePointer);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handlePointer);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [open, onClose]);
+  return ref;
+}
+
+function Combobox({
+  ariaLabel, dataAttr, disabled, disabledHint, emptyHint, items, onSelect,
+  placeholder, renderOption, renderTrigger, searchPlaceholder, value
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [activeIndex, setActiveIndex] = useState(0);
+  const containerRef = useClickOutside(open, () => setOpen(false));
+  const inputRef = React.useRef(null);
+
+  const filtered = useMemo(() => {
+    const norm = search.trim().toLowerCase();
+    if (!norm) return items;
+    return items.filter((item) => item.searchText.toLowerCase().includes(norm));
+  }, [items, search]);
+
+  useEffect(() => {
+    if (!open) return;
+    setSearch('');
+    setActiveIndex(0);
+    const id = window.setTimeout(() => inputRef.current?.focus(), 0);
+    return () => window.clearTimeout(id);
+  }, [open]);
+
+  useEffect(() => {
+    if (activeIndex >= filtered.length) setActiveIndex(Math.max(0, filtered.length - 1));
+  }, [filtered.length, activeIndex]);
+
+  function commit(item) {
+    onSelect(item.value);
+    setOpen(false);
+  }
+
+  function handleKeyDown(event) {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setActiveIndex((idx) => Math.min(idx + 1, filtered.length - 1));
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setActiveIndex((idx) => Math.max(idx - 1, 0));
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      const item = filtered[activeIndex];
+      if (item) commit(item);
+    }
+  }
+
+  return h('div', {
+    ref: containerRef,
+    [dataAttr]: 'combobox',
+    'data-combobox-open': open ? 'true' : 'false',
+    className: 'relative flex-1 min-w-[220px]'
+  }, [
+    h('button', {
+      'aria-expanded': open ? 'true' : 'false',
+      'aria-haspopup': 'listbox',
+      'aria-label': ariaLabel,
+      className: [
+        'flex w-full items-center gap-3 rounded-2xl border bg-white/80 px-4 py-3 text-left transition-all',
+        disabled
+          ? 'cursor-not-allowed border-dashed border-outline-variant/40 bg-white/50 text-outline'
+          : open
+            ? 'border-primary shadow-[0_0_22px_rgba(0,102,255,0.18)]'
+            : 'border-outline-variant/40 hover:border-primary/50'
+      ].join(' '),
+      disabled,
+      onClick: () => !disabled && setOpen((prev) => !prev),
+      type: 'button'
+    }, [
+      renderTrigger(value, { disabled, disabledHint, placeholder }),
+      h(MaterialIcon, {
+        className: ['ml-auto text-[20px] transition-transform', open ? 'rotate-180 text-primary' : 'text-outline'].join(' '),
+        name: 'expand_more'
+      })
+    ]),
+    open
+      ? h('div', {
+          className: 'absolute left-0 right-0 z-30 mt-2 max-h-[420px] overflow-hidden rounded-2xl border border-outline-variant/40 bg-white/95 shadow-[0_18px_50px_-20px_rgba(15,23,42,0.45)] backdrop-blur',
+          role: 'listbox'
+        }, [
+          h('div', { className: 'relative border-b border-outline-variant/40 bg-surface-container-low/70 px-3 py-2' }, [
+            h(MaterialIcon, { className: 'absolute left-5 top-1/2 -translate-y-1/2 text-[18px] text-outline', name: 'search' }),
+            h('input', {
+              className: 'w-full rounded-xl border-none bg-transparent py-1.5 pl-8 pr-2 text-sm outline-none',
+              onChange: (event) => setSearch(event.target.value),
+              onKeyDown: handleKeyDown,
+              placeholder: searchPlaceholder,
+              ref: inputRef,
+              type: 'search',
+              value: search
+            })
+          ]),
+          filtered.length === 0
+            ? h('p', { className: 'px-4 py-6 text-center text-sm text-outline' }, emptyHint)
+            : h('ul', { className: 'max-h-[340px] space-y-1 overflow-auto p-2' }, filtered.map((item, index) =>
+                h('li', {
+                  'aria-selected': index === activeIndex ? 'true' : 'false',
+                  className: [
+                    'cursor-pointer rounded-xl border px-3 py-2 transition-all',
+                    index === activeIndex
+                      ? 'border-primary/40 bg-primary/5 shadow-[0_0_15px_rgba(0,102,255,0.12)]'
+                      : 'border-transparent hover:border-outline-variant/40 hover:bg-surface-container-low/60'
+                  ].join(' '),
+                  key: item.key,
+                  onClick: () => commit(item),
+                  onMouseEnter: () => setActiveIndex(index),
+                  role: 'option'
+                }, renderOption(item, index === activeIndex))
+              ))
+        ])
+      : null
+  ]);
+}
+
+function AgentTriggerContent({ bucket, lang, placeholder, t }) {
+  if (!bucket) {
+    return h('div', { className: 'flex min-w-0 items-center gap-3' }, [
+      h('div', { className: 'grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-surface-container-low text-outline' },
+        h(MaterialIcon, { className: 'text-[20px]', name: 'smart_toy' })
+      ),
+      h('div', { className: 'min-w-0' }, [
+        h('p', { className: 'text-label-caps font-label-caps uppercase tracking-wider text-outline' }, t.pickerAgentLabel),
+        h('p', { className: 'mt-0.5 truncate text-sm font-semibold text-outline' }, placeholder)
+      ])
+    ]);
+  }
+  const accent = frameworkAccent(bucket.framework);
+  return h('div', { className: 'flex min-w-0 items-center gap-3' }, [
+    h('div', { className: `grid h-10 w-10 shrink-0 place-items-center rounded-xl ${accent.icon}` },
+      h(MaterialIcon, { className: 'text-[20px]', filled: true, name: frameworkIcon(bucket.framework) })
+    ),
+    h('div', { className: 'min-w-0' }, [
+      h('p', { className: 'text-label-caps font-label-caps uppercase tracking-wider text-outline' }, t.pickerAgentLabel),
+      h('p', { className: 'mt-0.5 flex items-center gap-2 truncate text-sm font-semibold text-on-surface' }, [
+        h('span', { className: 'truncate' }, bucket.framework),
+        h('span', { className: 'shrink-0 rounded-full bg-surface-container-low px-2 py-0.5 font-mono text-[10px] text-outline' },
+          `${bucket.sessionCount} ${t.agentSessionCount}`
+        )
+      ])
+    ])
+  ]);
+}
+
+function SessionTriggerContent({ session, disabled, disabledHint, lang, placeholder, t }) {
+  if (disabled) {
+    return h('div', { className: 'flex min-w-0 items-center gap-3' }, [
+      h('div', { className: 'grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-surface-container-low text-outline' },
+        h(MaterialIcon, { className: 'text-[20px]', name: 'lock' })
+      ),
+      h('div', { className: 'min-w-0' }, [
+        h('p', { className: 'text-label-caps font-label-caps uppercase tracking-wider text-outline' }, t.pickerSessionLabel),
+        h('p', { className: 'mt-0.5 truncate text-sm font-semibold text-outline' }, disabledHint)
+      ])
+    ]);
+  }
+  if (!session) {
+    return h('div', { className: 'flex min-w-0 items-center gap-3' }, [
+      h('div', { className: 'grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-surface-container-low text-outline' },
+        h(MaterialIcon, { className: 'text-[20px]', name: 'receipt_long' })
+      ),
+      h('div', { className: 'min-w-0' }, [
+        h('p', { className: 'text-label-caps font-label-caps uppercase tracking-wider text-outline' }, t.pickerSessionLabel),
+        h('p', { className: 'mt-0.5 truncate text-sm font-semibold text-outline' }, placeholder)
+      ])
+    ]);
+  }
+  const score = trustScoreValue(session.quality);
+  return h('div', { className: 'flex min-w-0 items-center gap-3' }, [
+    h('div', { className: 'grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary-container' },
+      h(MaterialIcon, { className: 'text-[20px]', filled: true, name: 'receipt_long' })
+    ),
+    h('div', { className: 'min-w-0' }, [
+      h('p', { className: 'text-label-caps font-label-caps uppercase tracking-wider text-outline' }, t.pickerSessionLabel),
+      h('p', { className: 'mt-0.5 flex items-center gap-2 truncate text-sm font-semibold text-on-surface' }, [
+        h('span', { className: 'truncate font-mono' }, `#${session.session_id}`),
+        h('span', { className: `shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px] ${trustToneClass(score)}` }, `${score}%`),
+        h('span', { className: 'shrink-0 font-mono text-[10px] text-outline' }, relativeTimeLabel(session.last_event_at || session.started_at, lang))
+      ])
+    ])
+  ]);
+}
+
+function AgentOption({ bucket, t, lang }) {
+  const accent = frameworkAccent(bucket.framework);
+  return h('div', { className: 'flex items-center gap-3' }, [
+    h('div', { className: `grid h-10 w-10 shrink-0 place-items-center rounded-xl ${accent.icon}` },
+      h(MaterialIcon, { className: 'text-[20px]', filled: true, name: frameworkIcon(bucket.framework) })
+    ),
+    h('div', { className: 'min-w-0 flex-1' }, [
+      h('div', { className: 'flex items-center justify-between gap-3' }, [
+        h('span', { className: 'truncate text-sm font-semibold text-on-surface' }, bucket.framework),
+        h('span', { className: 'shrink-0 rounded-full bg-surface-container-low px-2 py-0.5 font-mono text-[10px] text-outline' },
+          `${bucket.sessionCount} ${t.agentSessionCount}`
+        )
+      ]),
+      h('div', { className: 'mt-1 flex items-center gap-3 text-[11px] text-outline' }, [
+        h('span', { className: 'flex items-center gap-1' }, [
+          h(MaterialIcon, { className: 'text-[14px]', name: 'verified' }),
+          `${bucket.avgTrust}% ${t.agentAvgTrust}`
+        ]),
+        h('span', { className: 'flex items-center gap-1' }, [
+          h(MaterialIcon, { className: 'text-[14px]', name: 'schedule' }),
+          relativeTimeLabel(bucket.lastEventAt, lang)
+        ])
+      ])
+    ])
+  ]);
+}
+
+function SessionOption({ session, t, lang, withAgentPrefix = false }) {
+  const score = trustScoreValue(session.quality);
+  const tele = session.telemetry || {};
+  const failedVerifications = Number(tele.verification_failed_count || 0);
+  return h('div', { className: 'flex items-center gap-3' }, [
+    h('div', { className: `grid h-10 w-10 shrink-0 place-items-center rounded-xl ${trustToneClass(score)} border` },
+      h('span', { className: 'font-mono text-[11px] font-bold' }, `${score}`)
+    ),
+    h('div', { className: 'min-w-0 flex-1' }, [
+      h('div', { className: 'flex items-center justify-between gap-3' }, [
+        h('span', { className: 'truncate font-mono text-sm font-semibold text-on-surface' },
+          withAgentPrefix ? `${session.framework} · #${session.session_id}` : `#${session.session_id}`
+        ),
+        h('span', { className: 'shrink-0 font-mono text-[10px] text-outline' },
+          relativeTimeLabel(session.last_event_at || session.started_at, lang)
+        )
+      ]),
+      h('div', { className: 'mt-1 flex flex-wrap items-center gap-2 text-[11px] text-outline' }, [
+        h('span', null, `${Number(session.event_count || 0).toLocaleString()} ${t.sessionEvents}`),
+        h('span', null, `${Number(tele.total_tokens || 0).toLocaleString()} ${t.tokens}`),
+        failedVerifications > 0
+          ? h('span', { className: 'text-rose-600' }, `${failedVerifications} ${t.failed}`)
+          : null,
+        session.satisfaction?.label
+          ? h('span', { className: session.satisfaction.label === 'accepted' ? 'text-green-700' : '' }, session.satisfaction.label)
+          : null
+      ])
+    ])
+  ]);
+}
+
+function PickerBar({
+  agentBuckets, agent, lang, latestSession, onOpenPalette, onSelectAgent,
+  onSelectSession, selectedSession, sessionsForAgent, t
+}) {
+  const currentBucket = agentBuckets.find((bucket) => bucket.framework === agent) || null;
+  const agentItems = agentBuckets.map((bucket) => ({
+    key: bucket.framework,
+    value: bucket.framework,
+    searchText: `${bucket.framework} ${bucket.sessionCount}`,
+    bucket
+  }));
+  const sessionItems = sessionsForAgent.map((session) => ({
+    key: session.session_id,
+    value: session.session_id,
+    searchText: `${session.session_id} ${session.satisfaction?.label || ''}`,
+    session
+  }));
+
+  const score = selectedSession ? trustScoreValue(selectedSession.quality) : null;
+  const tele = selectedSession?.telemetry || {};
+
+  return h('section', {
+    'data-picker-bar': 'agent-session',
+    className: 'sticky top-16 z-30 -mx-2 px-2 pb-2 pt-1'
+  }, [
+    h('div', { className: 'glass-card-strong rounded-3xl border border-white/40 p-md backdrop-blur-xl' }, [
+      h('div', { className: 'flex flex-wrap items-stretch gap-3' }, [
+        h(Combobox, {
+          ariaLabel: t.pickerAgentLabel,
+          dataAttr: 'data-agent-combobox',
+          disabled: agentBuckets.length === 0,
+          disabledHint: t.pickerNoAgents,
+          emptyHint: t.pickerNoMatches,
+          items: agentItems,
+          onSelect: onSelectAgent,
+          placeholder: t.pickerAgentPlaceholder,
+          renderOption: (item) => h(AgentOption, { bucket: item.bucket, lang, t }),
+          renderTrigger: (_value, opts) => h(AgentTriggerContent, { bucket: currentBucket, lang, placeholder: opts.placeholder, t }),
+          searchPlaceholder: t.pickerSearchAgents,
+          value: agent
+        }),
+        h('div', { 'aria-hidden': 'true', className: 'pointer-events-none flex shrink-0 items-center' }, [
+          h('span', { className: 'h-px w-3 bg-outline-variant' }),
+          h('span', { className: ['mx-1 grid h-6 w-6 place-items-center rounded-full border', agent ? 'border-primary/40 bg-primary/10 text-primary' : 'border-outline-variant/50 bg-white text-outline'].join(' ') },
+            h(MaterialIcon, { className: 'text-[14px]', name: 'chevron_right' })
+          ),
+          h('span', { className: 'h-px w-3 bg-outline-variant' })
+        ]),
+        h(Combobox, {
+          ariaLabel: t.pickerSessionLabel,
+          dataAttr: 'data-session-combobox',
+          disabled: !agent,
+          disabledHint: t.pickerSessionDisabled,
+          emptyHint: t.pickerNoMatches,
+          items: sessionItems,
+          onSelect: onSelectSession,
+          placeholder: t.pickerSessionPlaceholder,
+          renderOption: (item) => h(SessionOption, { session: item.session, lang, t }),
+          renderTrigger: (_value, opts) => h(SessionTriggerContent, {
+            disabled: opts.disabled,
+            disabledHint: opts.disabledHint,
+            lang,
+            placeholder: opts.placeholder,
+            session: selectedSession,
+            t
+          }),
+          searchPlaceholder: t.pickerSearchSessions,
+          value: selectedSession?.session_id || null
+        }),
+        h('button', {
+          'data-action': 'open-jump-palette',
+          'aria-label': t.pickerSearchAll,
+          className: 'flex shrink-0 items-center gap-2 rounded-2xl border border-outline-variant/40 bg-white/80 px-3 text-xs font-semibold text-on-surface-variant transition-all hover:border-primary/40 hover:text-primary',
+          onClick: onOpenPalette,
+          title: t.pickerSearchAll,
+          type: 'button'
+        }, [
+          h(MaterialIcon, { className: 'text-[18px]', name: 'search' }),
+          h('span', { className: 'hidden md:inline font-mono' }, '⌘K')
+        ])
+      ]),
+      selectedSession
+        ? h('div', {
+            'data-picker-summary': 'true',
+            className: 'mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-2xl border border-outline-variant/30 bg-white/60 px-md py-2 text-xs text-on-surface-variant'
+          }, [
+            currentBucket
+              ? h('span', { className: 'inline-flex items-center gap-1' }, [
+                  h(MaterialIcon, { className: 'text-[14px] text-outline', name: 'smart_toy' }),
+                  h('span', null, `${currentBucket.framework} · ${currentBucket.sessionCount} ${t.agentSessionCount}`)
+                ])
+              : null,
+            h('span', { className: 'inline-flex items-center gap-1' }, [
+              h(MaterialIcon, { className: 'text-[14px] text-outline', name: 'verified' }),
+              h('span', null, `${t.finalConfidence} ${score}%`)
+            ]),
+            h('span', { className: 'inline-flex items-center gap-1' }, [
+              h(MaterialIcon, { className: 'text-[14px] text-outline', name: 'bolt' }),
+              h('span', null, `${Number(selectedSession.event_count || 0).toLocaleString()} ${t.sessionEvents}`)
+            ]),
+            h('span', { className: 'inline-flex items-center gap-1' }, [
+              h(MaterialIcon, { className: 'text-[14px] text-outline', name: 'memory' }),
+              h('span', null, `${Number(tele.total_tokens || 0).toLocaleString()} ${t.tokens}`)
+            ]),
+            h('span', { className: 'inline-flex items-center gap-1' }, [
+              h(MaterialIcon, { className: 'text-[14px] text-outline', name: 'schedule' }),
+              h('span', null, relativeTimeLabel(selectedSession.last_event_at || selectedSession.started_at, lang))
+            ])
+          ])
+        : null
+    ])
+  ]);
+}
+
+function JumpToSessionPalette({ sessions, onClose, onSelect, t, lang }) {
+  const [query, setQuery] = useState('');
+  const [activeIndex, setActiveIndex] = useState(0);
+  const inputRef = React.useRef(null);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => inputRef.current?.focus(), 0);
+    function handleKey(event) {
+      if (event.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      window.clearTimeout(id);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [onClose]);
+
+  const norm = query.trim().toLowerCase();
+  const filtered = norm
+    ? sessions.filter((session) => [session.session_id, session.framework, session.satisfaction?.label].filter(Boolean).join(' ').toLowerCase().includes(norm))
+    : sessions.slice(0, 20);
+
+  useEffect(() => {
+    if (activeIndex >= filtered.length) setActiveIndex(Math.max(0, filtered.length - 1));
+  }, [filtered.length, activeIndex]);
+
+  function commit(session) {
+    onSelect(session);
+  }
+
+  function handleKeyDown(event) {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setActiveIndex((idx) => Math.min(idx + 1, filtered.length - 1));
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setActiveIndex((idx) => Math.max(idx - 1, 0));
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      const session = filtered[activeIndex];
+      if (session) commit(session);
+    }
+  }
+
+  return h('div', {
+    'aria-modal': 'true',
+    'data-jump-palette': 'open',
+    className: 'fixed inset-0 z-[60] flex items-start justify-center bg-slate-900/45 px-4 pt-[12vh] backdrop-blur-sm',
+    onClick: (event) => { if (event.target === event.currentTarget) onClose(); },
+    role: 'dialog'
+  }, [
+    h('div', { className: 'w-full max-w-[640px] overflow-hidden rounded-3xl border border-white/40 bg-white/95 shadow-[0_30px_80px_-30px_rgba(15,23,42,0.6)]' }, [
+      h('div', { className: 'relative border-b border-outline-variant/40 bg-surface-container-low/70 px-4 py-3' }, [
+        h(MaterialIcon, { className: 'absolute left-6 top-1/2 -translate-y-1/2 text-[20px] text-outline', name: 'search' }),
+        h('input', {
+          className: 'w-full rounded-xl border-none bg-transparent py-1.5 pl-9 pr-2 text-sm outline-none',
+          onChange: (event) => setQuery(event.target.value),
+          onKeyDown: handleKeyDown,
+          placeholder: t.pickerSearchAll,
+          ref: inputRef,
+          type: 'search',
+          value: query
+        }),
+        h('button', {
+          'aria-label': t.closeDialog,
+          className: 'absolute right-4 top-1/2 -translate-y-1/2 rounded-full p-1 text-outline transition-colors hover:bg-surface-container-low hover:text-primary',
+          onClick: onClose,
+          type: 'button'
+        }, h(MaterialIcon, { className: 'text-[18px]', name: 'close' }))
+      ]),
+      filtered.length === 0
+        ? h('p', { className: 'px-4 py-8 text-center text-sm text-outline' }, t.pickerNoMatches)
+        : h('ul', { className: 'max-h-[55vh] space-y-1 overflow-auto p-2', role: 'listbox' }, filtered.map((session, index) =>
+            h('li', {
+              'aria-selected': index === activeIndex ? 'true' : 'false',
+              className: [
+                'cursor-pointer rounded-xl border px-3 py-2',
+                index === activeIndex
+                  ? 'border-primary/40 bg-primary/5'
+                  : 'border-transparent hover:border-outline-variant/40 hover:bg-surface-container-low/60'
+              ].join(' '),
+              key: session.session_id,
+              onClick: () => commit(session),
+              onMouseEnter: () => setActiveIndex(index),
+              role: 'option'
+            }, h(SessionOption, { lang, session, t, withAgentPrefix: true }))
+          ))
+    ])
+  ]);
+}
+
+function EmptyTraceState({ t, lang, recentSessions = [], onSelectSession }) {
+  return h('section', {
+    'data-trace-empty': 'true',
+    className: 'glass-card rounded-3xl border border-dashed border-outline-variant/50 p-lg'
+  }, [
+    h('div', { className: 'flex flex-wrap items-start justify-between gap-4' }, [
+      h('div', { className: 'flex items-start gap-4 max-w-[640px]' }, [
+        h('div', { className: 'grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary-container' },
+          h(MaterialIcon, { className: 'text-[24px]', filled: true, name: 'route' })
+        ),
+        h('div', null, [
+          h('span', { className: 'text-label-caps font-label-caps uppercase tracking-wider text-primary' }, t.pickerSessionLabel),
+          h('h3', { className: 'mt-1 text-h3 font-h3 tracking-tight text-on-surface' }, t.pickerEmptyMain),
+          h('p', { className: 'mt-2 text-sm leading-6 text-on-surface-variant' }, t.pickerEmptyMainSub)
+        ])
+      ])
+    ]),
+    recentSessions.length
+      ? h('div', { className: 'mt-lg' }, [
+          h('div', { className: 'mb-sm flex items-center justify-between' }, [
+            h('span', { className: 'text-label-caps font-label-caps uppercase tracking-wider text-outline' }, t.pickerMostRecent),
+            h('span', { className: 'font-mono text-[11px] text-outline' }, `${recentSessions.length}`)
+          ]),
+          h('ul', { 'data-trace-empty-recent': 'true', className: 'divide-y divide-outline-variant/30 overflow-hidden rounded-2xl border border-outline-variant/30 bg-white/70' },
+            recentSessions.map((session) => {
+              const score = trustScoreValue(session.quality);
+              const tele = session.telemetry || {};
+              return h('li', { key: session.session_id }, h('button', {
+                className: 'group flex w-full items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-primary/5',
+                'data-action': 'open-recent-session',
+                onClick: () => onSelectSession(session.session_id),
+                type: 'button'
+              }, [
+                h('span', { className: `grid h-10 w-10 shrink-0 place-items-center rounded-xl border font-mono text-[11px] font-bold ${trustToneClass(score)}` }, `${score}`),
+                h('div', { className: 'min-w-0 flex-1' }, [
+                  h('div', { className: 'flex items-center gap-2' }, [
+                    h(MaterialIcon, { className: 'text-[14px] text-outline', name: frameworkIcon(session.framework) }),
+                    h('span', { className: 'truncate font-mono text-sm font-semibold text-on-surface' }, `${session.framework} · #${session.session_id}`)
+                  ]),
+                  h('div', { className: 'mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-outline' }, [
+                    h('span', null, `${Number(session.event_count || 0).toLocaleString()} ${t.sessionEvents}`),
+                    h('span', null, `${Number(tele.total_tokens || 0).toLocaleString()} ${t.tokens}`),
+                    session.satisfaction?.label
+                      ? h('span', { className: session.satisfaction.label === 'accepted' ? 'text-green-700' : '' }, session.satisfaction.label)
+                      : null,
+                    h('span', null, relativeTimeLabel(session.last_event_at || session.started_at, lang))
+                  ])
+                ]),
+                h(MaterialIcon, { className: 'text-[18px] text-outline transition-transform group-hover:translate-x-1 group-hover:text-primary', name: 'arrow_forward' })
+              ]));
+            })
+          )
+        ])
+      : null
+  ]);
+}
+
+
 function Inspector({ session, events, selectedEvent, t }) {
   const tele = session?.telemetry || {};
   const toolCalls = tele.tool_call_count || 0;
@@ -1186,17 +1836,14 @@ function Inspector({ session, events, selectedEvent, t }) {
   ]);
 }
 
-export function AgentTraceExplorer({ initialSessions = [], initialEvents = [], initialLang = 'zh', initialSelectedEventId = null, initialSelectedSessionId = null }) {
+export function AgentTraceExplorer({ initialSessions = [], initialEvents = [], initialLang = 'zh', initialSelectedAgent = null, initialSelectedEventId = null, initialSelectedSessionId = null }) {
   const [lang, setLangState] = useState(() => normalizeLang(initialLang));
   const t = traceCopy[lang];
   const [sessions, setSessions] = useState(initialSessions);
   const [events, setEvents] = useState(initialEvents);
-  const [selectedSessionId, setSelectedSessionId] = useState(
-    initialSessions.some((session) => session.session_id === initialSelectedSessionId)
-      ? initialSelectedSessionId
-      : initialSessions[0]?.session_id ?? null
-  );
-  const [framework, setFramework] = useState('all');
+  const initialSessionMatch = initialSessions.find((session) => session.session_id === initialSelectedSessionId) ?? null;
+  const [selectedAgent, setSelectedAgent] = useState(initialSessionMatch?.framework ?? initialSelectedAgent ?? null);
+  const [selectedSessionId, setSelectedSessionId] = useState(initialSessionMatch?.session_id ?? null);
   const [query, setQuery] = useState('');
   const [selectedEventId, setSelectedEventId] = useState(initialSelectedEventId ?? firstInspectableEventId(initialEvents));
   const [selectedTaskId, setSelectedTaskId] = useState(null);
@@ -1229,20 +1876,41 @@ export function AgentTraceExplorer({ initialSessions = [], initialEvents = [], i
     return () => clearInterval(timer);
   }, [selectedSessionId, events.length]);
 
+  useEffect(() => {
+    updateUrl(selectedAgent, selectedSessionId);
+  }, [selectedAgent, selectedSessionId]);
+
   function setLang(next) {
     const normalized = normalizeLang(next);
     setStoredLang(normalized);
     setLangState(normalized);
   }
 
-  const visibleSessions = useMemo(() => sessions.filter((s) => {
-    if (framework !== 'all' && s.framework !== framework) return false;
-    const norm = query.trim().toLowerCase();
-    if (!norm) return true;
-    return [s.session_id, s.framework, s.satisfaction?.label].filter(Boolean).join(' ').toLowerCase().includes(norm);
-  }), [sessions, framework, query]);
+  const agentBuckets = useMemo(() => aggregateAgents(sessions), [sessions]);
+  const agentSessions = useMemo(() => {
+    if (!selectedAgent) return [];
+    return sessions
+      .filter((session) => session.framework === selectedAgent)
+      .sort((a, b) => (b.last_event_at || '').localeCompare(a.last_event_at || ''));
+  }, [sessions, selectedAgent]);
 
-  const selectedSession = sessions.find((s) => s.session_id === selectedSessionId) ?? visibleSessions[0] ?? null;
+  const selectedSession = sessions.find((s) => s.session_id === selectedSessionId) ?? null;
+  const latestSession = useMemo(() => {
+    const pool = selectedAgent ? agentSessions : sessions;
+    if (!pool.length) return null;
+    return [...pool].sort((a, b) => (b.last_event_at || '').localeCompare(a.last_event_at || ''))[0];
+  }, [agentSessions, sessions, selectedAgent]);
+  const allSessionsSorted = useMemo(() =>
+    [...sessions].sort((a, b) => (b.last_event_at || '').localeCompare(a.last_event_at || '')),
+    [sessions]
+  );
+  const recentSessionsForEmpty = useMemo(() => {
+    const pool = selectedAgent ? agentSessions : allSessionsSorted;
+    return pool.slice(0, 5);
+  }, [allSessionsSorted, agentSessions, selectedAgent]);
+
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
   const groupedEvents = groupEvents(events, t);
   const tasks = useMemo(() => buildSessionTasks(events, t), [events, t]);
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? tasks[0] ?? null;
@@ -1253,13 +1921,36 @@ export function AgentTraceExplorer({ initialSessions = [], initialEvents = [], i
     0
   );
 
+  useEffect(() => {
+    function handleKey(event) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setPaletteOpen(true);
+      }
+    }
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, []);
+
   async function refresh() {
     const response = await fetch('/api/sessions');
     setSessions(await response.json());
   }
 
+  function selectAgent(agent) {
+    setSelectedAgent(agent);
+    setSelectedSessionId(null);
+    setEvents([]);
+    setQuery('');
+    setSelectedTaskId(null);
+    setSelectedEventId(null);
+  }
+
   async function selectSession(sessionId) {
+    const target = sessions.find((session) => session.session_id === sessionId);
+    if (target?.framework) setSelectedAgent(target.framework);
     setSelectedSessionId(sessionId);
+    setPaletteOpen(false);
     const next = await refreshEventsForSession(sessionId);
     setSelectedTaskId(null);
     setSelectedEventId(firstInspectableEventId(next));
@@ -1287,35 +1978,23 @@ export function AgentTraceExplorer({ initialSessions = [], initialEvents = [], i
     if (firstAction) setSelectedEventId(firstAction.event_id);
   }
 
-  return h('div', {
-    className: 'min-h-screen text-on-background',
-    'data-auto-refresh-events-ms': EVENT_AUTO_REFRESH_MS,
-    'data-auto-refresh-sessions-ms': SESSION_AUTO_REFRESH_MS,
-    'data-selected-session-id': selectedSession?.session_id || ''
-  }, [
-    h(Sidebar, { activeView: 'traces', key: 'sidebar' }),
-    h(TopBar, { key: 'top', lang, notificationCount, onRefresh: refresh, searchQuery: query, setLang, t }),
-    h('main', { className: 'ml-20 pt-16 px-8 pb-12 min-h-screen' }, [
-      h('div', { className: 'mx-auto max-w-[1400px] space-y-margin' }, [
-        h('header', { className: 'mb-lg flex flex-wrap items-end justify-between gap-4', key: 'head' }, [
-          h('div', null, [
-            h('span', { className: 'font-mono text-xs font-bold uppercase tracking-widest text-primary' }, t.eyebrow),
-            h('h2', { className: 'mt-2 text-h2 font-h2 tracking-tight text-on-surface' }, t.title),
-            h('p', { className: 'mt-2 max-w-2xl text-body-md text-on-surface-variant' }, t.subtitle)
-          ]),
-          h('div', { className: 'flex gap-3' }, [
-            h('a', {
-              className: 'flex items-center gap-2 rounded-xl bg-surface-container-highest px-4 py-2 font-semibold text-on-surface transition-all hover:bg-surface-container-high',
-              href: `/api/sessions/${encodeURIComponent(selectedSession?.session_id || '')}/events`
-            }, [h(MaterialIcon, { className: 'text-[20px]', name: 'download' }), t.exportJson]),
-            h('a', {
-              className: 'flex items-center gap-2 rounded-xl bg-primary text-white px-4 py-2 font-semibold transition-all hover:scale-[1.02] active:scale-95 inner-glow',
-              href: selectedSession?.session_id ? `/sessions?q=${encodeURIComponent(selectedSession.session_id)}` : '/sessions'
-            }, [h(MaterialIcon, { className: 'text-[20px]', name: 'arrow_forward' }), t.openSession])
-          ])
-        ]),
-        selectedSession ? h(ResultBadge, { key: 'badge', session: selectedSession, t }) : null,
-        selectedSession ? h(RunSummaryPanel, { actions: actionFlow, key: 'run-summary', selectedTask, session: selectedSession, t }) : null,
+  const traceActions = selectedSession
+    ? h('div', { className: 'flex flex-wrap gap-3' }, [
+        h('a', {
+          className: 'flex items-center gap-2 rounded-xl bg-surface-container-highest px-4 py-2 font-semibold text-on-surface transition-all hover:bg-surface-container-high',
+          href: `/api/sessions/${encodeURIComponent(selectedSession.session_id)}/events`
+        }, [h(MaterialIcon, { className: 'text-[20px]', name: 'download' }), t.exportJson]),
+        h('a', {
+          className: 'flex items-center gap-2 rounded-xl bg-primary text-white px-4 py-2 font-semibold transition-all hover:scale-[1.02] active:scale-95 inner-glow',
+          href: `/sessions?q=${encodeURIComponent(selectedSession.session_id)}`
+        }, [h(MaterialIcon, { className: 'text-[20px]', name: 'arrow_forward' }), t.openSession])
+      ])
+    : null;
+
+  const traceArea = selectedSession
+    ? h('div', { 'data-trace-area': 'mounted', key: 'trace', className: 'space-y-margin' }, [
+        h(ResultBadge, { key: 'badge', session: selectedSession, t }),
+        h(RunSummaryPanel, { actions: actionFlow, key: 'run-summary', selectedTask, session: selectedSession, t }),
         h('div', { className: 'grid grid-cols-1 lg:grid-cols-12 gap-gutter', key: 'body' }, [
           h('section', { className: 'lg:col-span-8 space-y-gutter' }, [
             h(TaskList, { key: 'tasks', onSelectTask: selectTask, selectedTaskId: selectedTask?.id || '', tasks, t }),
@@ -1335,14 +2014,55 @@ export function AgentTraceExplorer({ initialSessions = [], initialEvents = [], i
                 ))
           ]),
           h('aside', { className: 'lg:col-span-4 space-y-gutter' }, [
-            h(SessionPicker, {
-              framework, onSelect: selectSession, query,
-              selectedSessionId: selectedSession?.session_id || '',
-              sessions: visibleSessions, setFramework, setQuery, t
-            }),
             h(Inspector, { events, selectedEvent, session: selectedSession, t })
           ])
         ])
+      ])
+    : h(EmptyTraceState, { key: 'empty', lang, onSelectSession: selectSession, recentSessions: recentSessionsForEmpty, t });
+
+  return h('div', {
+    className: 'min-h-screen text-on-background',
+    'data-auto-refresh-events-ms': EVENT_AUTO_REFRESH_MS,
+    'data-auto-refresh-sessions-ms': SESSION_AUTO_REFRESH_MS,
+    'data-selected-agent': selectedAgent || '',
+    'data-selected-session-id': selectedSession?.session_id || ''
+  }, [
+    h(Sidebar, { activeView: 'traces', key: 'sidebar' }),
+    h(TopBar, { key: 'top', lang, notificationCount, onRefresh: refresh, searchQuery: query, setLang, t }),
+    h('main', { className: 'ml-20 pt-16 px-8 pb-12 min-h-screen' }, [
+      h('div', { className: 'mx-auto max-w-[1400px] space-y-margin' }, [
+        h('header', { className: 'mb-lg flex flex-wrap items-end justify-between gap-4', key: 'head' }, [
+          h('div', null, [
+            h('span', { className: 'font-mono text-xs font-bold uppercase tracking-widest text-primary' }, t.eyebrow),
+            h('h2', { className: 'mt-2 text-h2 font-h2 tracking-tight text-on-surface' }, t.title),
+            h('p', { className: 'mt-2 max-w-2xl text-body-md text-on-surface-variant' }, t.subtitle)
+          ]),
+          traceActions
+        ]),
+        h(PickerBar, {
+          agent: selectedAgent,
+          agentBuckets,
+          key: 'picker-bar',
+          lang,
+          latestSession,
+          onOpenPalette: () => setPaletteOpen(true),
+          onSelectAgent: selectAgent,
+          onSelectSession: selectSession,
+          selectedSession,
+          sessionsForAgent: agentSessions,
+          t
+        }),
+        traceArea,
+        paletteOpen
+          ? h(JumpToSessionPalette, {
+              key: 'palette',
+              lang,
+              onClose: () => setPaletteOpen(false),
+              onSelect: (session) => selectSession(session.session_id),
+              sessions: allSessionsSorted,
+              t
+            })
+          : null
       ])
     ])
   ]);

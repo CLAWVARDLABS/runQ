@@ -7,6 +7,7 @@ import { AgentTraceExplorer } from '../components/run-inbox/AgentTraceExplorer.j
 
 function traceProps() {
   return {
+    initialSelectedSessionId: 'ses_trace_1',
     initialSessions: [{
       session_id: 'ses_trace_1',
       framework: 'openclaw',
@@ -144,7 +145,11 @@ test('AgentTraceExplorer renders expandable session traces in Chinese by default
 
   assert.match(html, /Agent 会话追踪/);
   assert.doesNotMatch(html, /主页.*追踪视图.*ses_trace_1/s);
-  assert.match(html, /会话列表/);
+  assert.match(html, /data-picker-bar="agent-session"/);
+  assert.match(html, /data-agent-combobox="combobox"/);
+  assert.match(html, /data-session-combobox="combobox"/);
+  assert.match(html, /data-picker-summary="true"/);
+  assert.match(html, /data-trace-area="mounted"/);
   assert.match(html, /会话纵览/);
   assert.match(html, /运行复盘/);
   assert.match(html, /RunQ 信任分/);
@@ -281,7 +286,10 @@ test('AgentTraceExplorer can render the English trace shell', () => {
 
   assert.match(html, /Agent Session Traces/);
   assert.doesNotMatch(html, /Home.*Trace Explorer.*ses_trace_1/s);
-  assert.match(html, /Session List/);
+  assert.match(html, /data-picker-bar="agent-session"/);
+  assert.match(html, /data-agent-combobox="combobox"/);
+  assert.match(html, /data-session-combobox="combobox"/);
+  assert.match(html, /data-trace-area="mounted"/);
   assert.match(html, /Span Detail/);
   assert.match(html, /Evidence timeline/);
   assert.match(html, /Task flow/);
