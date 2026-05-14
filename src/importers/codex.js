@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { eventId } from '../normalize-utils.js';
 import { scoreRun } from '../scoring.js';
+import { linkAgentEventParents } from '../event-tree.js';
 
 // Codex CLI persists each rollout as
 // ~/.codex/sessions/<YYYY>/<MM>/<DD>/rollout-<ts>-<uuid>.jsonl.
@@ -195,6 +196,7 @@ export function codexRolloutRowsToEvents(rows, fallbackSessionId = null) {
     payload: scoreRun(events)
   }));
 
+  linkAgentEventParents(events);
   return events;
 }
 

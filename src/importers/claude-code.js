@@ -1,8 +1,9 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { extname, join } from 'node:path';
 
-import { eventId } from '../normalize-utils.js';
+import { binaryFromCommand, eventId, hash, isVerificationCommand } from '../normalize-utils.js';
 import { scoreRun } from '../scoring.js';
+import { linkAgentEventParents } from '../event-tree.js';
 
 // Claude Code persists each session as ~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl.
 // Records are heterogeneous; we extract just enough to emit a minimum-viable
@@ -41,6 +42,47 @@ function flattenText(content) {
 function collectToolUses(content) {
   if (!Array.isArray(content)) return [];
   return content.filter((block) => block?.type === 'tool_use');
+}
+
+function isFileMutationTool(name) {
+  return ['Edit', 'MultiEdit', 'Write', 'NotebookEdit'].includes(String(name ?? ''));
+}
+
+function commandPayload({ command, cwd, exitCode, output, toolUseId }) {
+  const verification = isVerificationCommand(command);
+  return {
+    command_id: toolUseId ?? hash(command),
+    command_kind: 'shell',
+    binary: binaryFromCommand(command),
+    args_hash: hash(command),
+    cwd_hash: hash(cwd),
+    exit_code: exitCode,
+    stdout_hash: output === undefined ? undefined : hash(output),
+    stderr_hash: undefined,
+    is_verification: verification,
+    verification_kind: verification ? 'command' : undefined
+  };
+}
+
+function fileChangePayload(toolUse) {
+  const input = toolUse.input ?? {};
+  const filePath = input.file_path ?? input.path ?? input.notebook_path ?? '';
+  const extension = extname(filePath).replace(/^\./, '');
+  return {
+    path_hash: hash(filePath),
+    file_extension: extension || undefined,
+    change_kind: toolUse.name === 'Write' ? 'written' : 'modified',
+    tool_name: toolUse.name
+  };
+}
+
+function toolResultContent(block) {
+  if (typeof block?.content === 'string') return block.content;
+  if (!Array.isArray(block?.content)) return '';
+  return block.content
+    .map((part) => typeof part === 'string' ? part : part?.text ?? '')
+    .filter(Boolean)
+    .join('\n');
 }
 
 function makeEvent({ sessionId, type, timestamp, payload, parts }) {
@@ -149,7 +191,7 @@ export function claudeCodeSessionRowsToEvents(rows, fallbackSessionId = null) {
     }));
 
     for (const block of collectToolUses(record.message.content)) {
-      toolUseIndex.set(block.id, { name: block.name, timestamp: startTs });
+      toolUseIndex.set(block.id, { name: block.name, input: block.input, timestamp: startTs });
       events.push(makeEvent({
         sessionId,
         type: 'tool.call.started',
@@ -160,6 +202,33 @@ export function claudeCodeSessionRowsToEvents(rows, fallbackSessionId = null) {
           tool_call_id: block.id
         }
       }));
+      if (block.name === 'Bash') {
+        const command = block.input?.command ?? '';
+        const payload = commandPayload({
+          command,
+          cwd,
+          toolUseId: block.id
+        });
+        delete payload.exit_code;
+        delete payload.stdout_hash;
+        delete payload.stderr_hash;
+        events.push(makeEvent({
+          sessionId,
+          type: 'command.started',
+          timestamp: startTs,
+          parts: [sessionId, 'command.started', block.id],
+          payload
+        }));
+      }
+      if (isFileMutationTool(block.name)) {
+        events.push(makeEvent({
+          sessionId,
+          type: 'file.changed',
+          timestamp: startTs,
+          parts: [sessionId, 'file.changed', block.id],
+          payload: fileChangePayload(block)
+        }));
+      }
     }
   }
 
@@ -183,6 +252,23 @@ export function claudeCodeSessionRowsToEvents(rows, fallbackSessionId = null) {
           status: isError ? 'failed' : 'completed'
         }
       }));
+      if (original.name === 'Bash') {
+        const command = original.input?.command ?? '';
+        const output = toolResultContent(block);
+        events.push(makeEvent({
+          sessionId,
+          type: 'command.ended',
+          timestamp: row.timestamp ?? original.timestamp,
+          parts: [sessionId, 'command.ended', block.tool_use_id],
+          payload: commandPayload({
+            command,
+            cwd,
+            exitCode: isError ? 1 : 0,
+            output,
+            toolUseId: block.tool_use_id
+          })
+        }));
+      }
     }
   }
 
@@ -205,6 +291,7 @@ export function claudeCodeSessionRowsToEvents(rows, fallbackSessionId = null) {
     payload: scoreRun(events)
   }));
 
+  linkAgentEventParents(events);
   return events;
 }
 

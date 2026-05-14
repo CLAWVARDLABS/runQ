@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { eventId } from '../normalize-utils.js';
 import { scoreRun } from '../scoring.js';
+import { linkAgentEventParents } from '../event-tree.js';
 
 // Hermes Agent persists everything in ~/.hermes/state.db (SQLite, WAL):
 //   sessions(id, source, user_id, model, ..., input_tokens, output_tokens,
@@ -162,6 +163,7 @@ export function hermesStateRowsToEvents(session, messages) {
     payload: scoreRun(events)
   }));
 
+  linkAgentEventParents(events);
   return events;
 }
 

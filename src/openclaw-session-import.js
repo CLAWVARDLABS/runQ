@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { normalizeOpenClawEvent } from '../adapters/openclaw/normalize.js';
 import { eventId } from './normalize-utils.js';
 import { scoreRun } from './scoring.js';
+import { linkAgentEventParents } from './event-tree.js';
 
 function textBlocks(content) {
   if (!Array.isArray(content)) {
@@ -213,6 +214,7 @@ export function openClawSessionRowsToRunQEvents(rows) {
     payload: score
   });
 
+  linkAgentEventParents(events);
   return events;
 }
 

@@ -57,6 +57,8 @@ const traceCopy = {
     runSummary: '运行复盘',
     runSummaryBody: '用 RunQ Trust Model 解释这次运行是否可信、Agent 走了哪些步骤，以及调用了哪些能力。',
     finalConfidence: 'RunQ 信任分',
+    evidenceLimited: '证据不足',
+    evidenceLimitedBody: 'RunQ 看到了模型或工具活动，但未归一化到文件变更或验证证据。',
     trustModel: 'Trust Model',
     outcomeEvidence: 'Outcome 证据',
     executionPath: '执行路径',
@@ -170,6 +172,8 @@ const traceCopy = {
     runSummary: 'Run Summary',
     runSummaryBody: 'A structured RunQ Trust Model explanation of reliability, execution path, and capability calls for this run.',
     finalConfidence: 'RunQ Trust Score',
+    evidenceLimited: 'Evidence limited',
+    evidenceLimitedBody: 'RunQ saw model or tool activity, but no normalized file-change or verification evidence.',
     trustModel: 'Trust Model',
     outcomeEvidence: 'Outcome evidence',
     executionPath: 'Execution path',
@@ -433,8 +437,22 @@ function capabilityName(action) {
   return action.tool_name || action.action_name || action.title;
 }
 
+function isEvidenceLimitedSession(session) {
+  const quality = session?.quality || {};
+  const telemetry = session?.telemetry || {};
+  const score = trustScoreValue(quality);
+  const reasons = Array.isArray(quality.reasons) ? quality.reasons : [];
+  const hasScoringEvidence = Number(telemetry.command_count || 0) > 0 ||
+    Number(telemetry.verification_count || 0) > 0 ||
+    Number(telemetry.file_change_count || 0) > 0;
+  const hasObservedActivity = Number(telemetry.model_call_count || 0) > 0 ||
+    Number(telemetry.tool_call_count || 0) > 0;
+  return score === 55 && reasons.length === 0 && hasObservedActivity && !hasScoringEvidence && !session?.satisfaction?.label;
+}
+
 function buildRunSummary(session, selectedTask, actions, t) {
   const confidence = trustScoreValue(session?.quality);
+  const evidenceLimited = isEvidenceLimitedSession(session);
   const verifications = actions.filter((action) => action.kind === 'verification');
   const passedVerifications = verifications.filter((action) => action.status !== 'failed').length;
   const failedVerifications = verifications.length - passedVerifications;
@@ -450,12 +468,14 @@ function buildRunSummary(session, selectedTask, actions, t) {
     .join(' → ') || t.noSignal;
   return {
     confidence,
+    evidenceDetail: evidenceLimited ? t.evidenceLimitedBody : null,
+    evidenceLimited,
     footprint: uniqueCapabilities.join(' · ') || t.noToolFootprint,
     path,
     request: selectedTask?.summary || t.selectSession,
     verification: verifications.length
       ? `${passedVerifications}/${verifications.length} ${t.verification}${failedVerifications ? ` · ${failedVerifications} ${t.failed}` : ''}`
-      : t.noSignal
+      : evidenceLimited ? t.evidenceLimited : t.noSignal
   };
 }
 
@@ -1011,6 +1031,73 @@ function StaticTaskWorkflow({ actions, selectedEventId, onSelectEvent }) {
   ]);
 }
 
+// Build a parent-child tree out of action.parent_id pointing back to other
+// actions in the same set. Falls back to a linear chain (parent = previous
+// action) when no parent_id information is present (legacy data).
+function buildActionTree(actions) {
+  const byId = new Map(actions.map((action) => [action.event_id, action]));
+  const childrenByParent = new Map();
+  const roots = [];
+  let hasAnyParent = false;
+
+  for (const action of actions) {
+    let parentId = action.parent_id;
+    // Walk up if the parent isn't in the rendered slice (e.g. session.started
+    // is filtered out of actions). Bail out at depth 8 to avoid pathological
+    // cycles in malformed data.
+    let depth = 0;
+    while (parentId && !byId.has(parentId) && depth < 8) {
+      const ancestor = actions.find((a) => a.event_id === parentId);
+      if (!ancestor) break;
+      parentId = ancestor.parent_id;
+      depth += 1;
+    }
+    if (parentId && byId.has(parentId) && parentId !== action.event_id) {
+      hasAnyParent = true;
+      const siblings = childrenByParent.get(parentId) ?? [];
+      siblings.push(action);
+      childrenByParent.set(parentId, siblings);
+    } else {
+      roots.push(action);
+    }
+  }
+
+  // Fallback: nothing has a parent → chain by index so the layout degrades to
+  // the previous linear view.
+  if (!hasAnyParent && actions.length > 1) {
+    const chainedRoots = [actions[0]];
+    const chainedChildren = new Map();
+    for (let i = 1; i < actions.length; i += 1) {
+      chainedChildren.set(actions[i - 1].event_id, [actions[i]]);
+    }
+    return { roots: chainedRoots, childrenByParent: chainedChildren };
+  }
+  return { roots, childrenByParent };
+}
+
+const TREE_X_GAP = 360;
+const TREE_Y_GAP = 110;
+
+function layoutActionTree(roots, childrenByParent) {
+  const positions = new Map();
+  let yCursor = 0;
+  function place(action, depth) {
+    const children = childrenByParent.get(action.event_id) ?? [];
+    if (children.length === 0) {
+      const y = yCursor * TREE_Y_GAP;
+      yCursor += 1;
+      positions.set(action.event_id, { x: depth * TREE_X_GAP, y });
+      return y;
+    }
+    const childYs = children.map((child) => place(child, depth + 1));
+    const y = (childYs[0] + childYs[childYs.length - 1]) / 2;
+    positions.set(action.event_id, { x: depth * TREE_X_GAP, y });
+    return y;
+  }
+  for (const root of roots) place(root, 0);
+  return positions;
+}
+
 function TaskWorkflowCanvas({ actions, selectedEventId, onSelectEvent }) {
   const mounted = useMounted();
   // Cap node count so ReactFlow stays responsive on huge sessions.
@@ -1018,26 +1105,42 @@ function TaskWorkflowCanvas({ actions, selectedEventId, onSelectEvent }) {
     () => actions.length > MAX_FLOW_NODES ? actions.slice(0, MAX_FLOW_NODES) : actions,
     [actions]
   );
-  const nodes = useMemo(() => renderActions.map((action, index) => ({
-    id: action.event_id,
-    type: 'taskAction',
-    position: { x: 32 + index * 390, y: 48 },
-    data: {
-      action,
-      index,
-      onSelect: onSelectEvent,
-      selected: selectedEventId === action.event_id,
-      total: renderActions.length
+  const tree = useMemo(() => buildActionTree(renderActions), [renderActions]);
+  const positions = useMemo(
+    () => layoutActionTree(tree.roots, tree.childrenByParent),
+    [tree]
+  );
+  const nodes = useMemo(() => renderActions.map((action, index) => {
+    const pos = positions.get(action.event_id) ?? { x: 32 + index * TREE_X_GAP, y: 48 };
+    return {
+      id: action.event_id,
+      type: 'taskAction',
+      position: { x: 32 + pos.x, y: 32 + pos.y },
+      data: {
+        action,
+        index,
+        onSelect: onSelectEvent,
+        selected: selectedEventId === action.event_id,
+        total: renderActions.length
+      }
+    };
+  }), [renderActions, positions, onSelectEvent, selectedEventId]);
+  const edges = useMemo(() => {
+    const list = [];
+    for (const [parentId, children] of tree.childrenByParent.entries()) {
+      for (const child of children) {
+        list.push({
+          id: `${parentId}-${child.event_id}`,
+          source: parentId,
+          target: child.event_id,
+          type: 'smoothstep',
+          markerEnd: { type: MarkerType.ArrowClosed, color: '#0050CB' },
+          style: { stroke: '#0050CB', strokeOpacity: 0.5, strokeWidth: 2 }
+        });
+      }
     }
-  })), [renderActions, onSelectEvent, selectedEventId]);
-  const edges = useMemo(() => renderActions.slice(1).map((action, index) => ({
-    id: `${renderActions[index].event_id}-${action.event_id}`,
-    source: renderActions[index].event_id,
-    target: action.event_id,
-    type: 'smoothstep',
-    markerEnd: { type: MarkerType.ArrowClosed, color: '#0050CB' },
-    style: { stroke: '#0050CB', strokeOpacity: 0.5, strokeWidth: 2 }
-  })), [renderActions]);
+    return list;
+  }, [tree]);
 
   return h('div', {
     className: 'overflow-hidden rounded-2xl border border-outline-variant/35 bg-surface-container-lowest/70',
@@ -1183,13 +1286,16 @@ function RunSummaryPanel({ actions, selectedTask, session, t }) {
         h('h3', { className: 'mt-2 text-h3 font-h3 tracking-tight' }, summary.request),
         h('p', { className: 'mt-2 max-w-3xl text-sm leading-6 text-on-surface-variant' }, t.runSummaryBody)
       ]),
-      chip(`${summary.confidence}%`, summary.confidence >= 80 ? 'good' : summary.confidence >= 50 ? 'warn' : 'bad', 'confidence')
+      chip(summary.evidenceLimited ? `${summary.confidence}% · ${t.evidenceLimited}` : `${summary.confidence}%`, summary.confidence >= 80 ? 'good' : summary.confidence >= 50 ? 'warn' : 'bad', 'confidence')
     ]),
     h('div', { className: 'grid gap-md md:grid-cols-3' }, [
       h('article', { className: 'rounded-2xl border border-outline-variant/30 bg-white/65 p-md' }, [
         h('p', { className: 'text-label-caps font-label-caps uppercase text-outline' }, t.finalConfidence),
         h('p', { className: 'mt-2 font-mono text-h3 font-h3 tracking-tight text-on-surface' }, `${summary.confidence}%`),
-        h('p', { className: 'mt-1 text-xs leading-5 text-outline' }, summary.verification)
+        h('p', { className: 'mt-1 text-xs leading-5 text-outline' }, summary.evidenceLimited ? t.evidenceLimited : summary.verification),
+        summary.evidenceDetail
+          ? h('p', { className: 'mt-2 text-xs leading-5 text-on-surface-variant' }, summary.evidenceDetail)
+          : null
       ]),
       h('article', { className: 'rounded-2xl border border-outline-variant/30 bg-white/65 p-md' }, [
         h('p', { className: 'text-label-caps font-label-caps uppercase text-outline' }, t.callFootprint),
