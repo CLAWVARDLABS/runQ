@@ -57,6 +57,7 @@
     "openclaw:docker-e2e": "docker build -f tools/openclaw-docker-e2e/Dockerfile -t runq-openclaw-e2e:local . && docker run --rm -e OPENCLAW_E2E_API_KEY -e OPENCLAW_E2E_BASE_URL -e OPENCLAW_E2E_PROVIDER -e OPENCLAW_E2E_MODEL -v \"$PWD/.runq/docker-openclaw:/runq\" runq-openclaw-e2e:local",
     "openclaw:reporter": "node tools/openclaw-reporter/reporter.js",
     "release-check": "node scripts/release-check.mjs",
+    "start": "next start",
     "test": "node --test",
     "test:e2e": "playwright test"
   },
