@@ -1424,7 +1424,10 @@ function AdvisorPanel({ recommendations, t }) {
         ? h('div', { className: 'glass-card rounded-2xl p-5 text-sm text-slate-500' }, t.advisorEmpty)
         : recommendations.slice(0, 3).map((rec, i) => {
             const p = palette[i % palette.length];
-            return h('div', { className: `glass-card p-5 rounded-2xl border-l-4 ${p.left} group cursor-pointer hover:bg-white transition-all`, key: rec.recommendation_id || i },
+            // Compose with session_id because allRecs is a cross-session
+            // flatMap — the same recommendation_id (e.g. derived from category)
+            // can legitimately appear once per session.
+            return h('div', { className: `glass-card p-5 rounded-2xl border-l-4 ${p.left} group cursor-pointer hover:bg-white transition-all`, key: `${rec.session_id ?? 'unknown'}:${rec.recommendation_id || i}` },
               h('div', { className: 'flex gap-4' }, [
                 h('div', { className: `w-10 h-10 rounded-xl ${p.wrap} flex items-center justify-center shrink-0` },
                   h(MaterialIcon, { className: 'text-[20px]', name: p.icon })
@@ -1714,8 +1717,8 @@ function QualityInspector({ session, t }) {
         h('h4', { className: 'mb-2 text-label-caps font-label-caps uppercase text-outline' }, t.recommendations),
         recs.length === 0
           ? h('p', { className: 'rounded-2xl bg-surface-container-low/60 p-3 text-sm text-outline' }, t.noRecommendations)
-          : h('div', { className: 'space-y-2' }, recs.map((rec) =>
-              h('article', { className: 'rounded-2xl border border-outline-variant/30 bg-white/60 p-3', key: rec.recommendation_id || rec.title }, [
+          : h('div', { className: 'space-y-2' }, recs.map((rec, idx) =>
+              h('article', { className: 'rounded-2xl border border-outline-variant/30 bg-white/60 p-3', key: `${rec.recommendation_id || rec.title}-${idx}` }, [
                 h('div', { className: 'mb-2 flex items-start justify-between gap-2' }, [
                   chip(rec.category, 'info', 'cat'),
                   chip(recommendationStateLabel(rec.state, t), recommendationStateTone(rec.state), 'state')
