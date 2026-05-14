@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { extname, join } from 'node:path';
 
-import { binaryFromCommand, eventId, hash, isVerificationCommand } from '../normalize-utils.js';
+import { binaryFromCommand, eventId, hash, isVerificationCommand, textSummary } from '../normalize-utils.js';
 import { scoreRun } from '../scoring.js';
 import { linkAgentEventParents } from '../event-tree.js';
 
@@ -131,19 +131,28 @@ export function claudeCodeSessionRowsToEvents(rows, fallbackSessionId = null) {
     }
   }));
 
-  const firstUserPrompt = rows.find((row) =>
+  // Emit one user.prompt.submitted event per real user prompt. Claude Code
+  // also writes user-role records to carry tool_result blocks (no text), skip
+  // those. The event_id seed combines the message uuid + timestamp so re-runs
+  // of the importer stay idempotent.
+  const userPromptRows = rows.filter((row) =>
     row?.type === 'user' && row?.message?.role === 'user' && row?.timestamp
   );
-  if (firstUserPrompt) {
-    const text = flattenText(firstUserPrompt.message?.content) || String(firstUserPrompt.message?.content ?? '');
+  for (const row of userPromptRows) {
+    const text = flattenText(row.message?.content);
+    const plainText = typeof row.message?.content === 'string' ? row.message.content : '';
+    const promptText = text || plainText;
+    if (!promptText.trim()) continue;
+    const promptId = row.uuid ?? row.promptId ?? `${row.timestamp}:${promptText.length}`;
     events.push(makeEvent({
       sessionId,
       type: 'user.prompt.submitted',
-      timestamp: firstUserPrompt.timestamp,
-      parts: [sessionId, 'user.prompt.submitted', firstUserPrompt.timestamp],
+      timestamp: row.timestamp,
+      parts: [sessionId, 'user.prompt.submitted', promptId],
       payload: {
-        prompt_length: text.length,
-        prompt_summary: text ? `Prompt captured · ${text.length} chars` : null
+        prompt_length: promptText.length,
+        prompt_summary: textSummary(promptText, 160),
+        prompt_hash: hash(promptText)
       }
     }));
   }

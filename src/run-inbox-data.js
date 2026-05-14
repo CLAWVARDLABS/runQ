@@ -74,6 +74,20 @@ function number(value) {
   return Number.isFinite(Number(value)) ? Number(value) : 0;
 }
 
+// Pull every user.prompt.submitted prompt_summary into a flat array so the
+// dashboard can search by prompt content with session-level granularity. The
+// summaries are already metadata-first (160-char snippets) per the importer
+// and live-hook conventions.
+export function collectPromptSnippets(events) {
+  return events
+    .filter((event) => event.event_type === 'user.prompt.submitted')
+    .map((event) => {
+      const text = event.payload?.prompt_summary;
+      return typeof text === 'string' && text.trim() ? text : '';
+    })
+    .filter(Boolean);
+}
+
 export function summarizeSessionTelemetry(events) {
   const modelEnded = events.filter((event) => event.event_type === 'model.call.ended');
   const commandEnded = events.filter((event) => event.event_type === 'command.ended');
@@ -156,7 +170,8 @@ export function getRunInboxSessions(dbPath = defaultRunInboxDbPath()) {
         quality: scoreRun(events),
         recommendations: recommendRunImprovements(events),
         satisfaction: latestSatisfaction(events),
-        telemetry: summarizeSessionTelemetry(events)
+        telemetry: summarizeSessionTelemetry(events),
+        prompt_snippets: collectPromptSnippets(events)
       };
       store.upsertSessionMetrics(session.session_id, {
         event_count: session.event_count,

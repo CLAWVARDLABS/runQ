@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-import { eventId } from '../normalize-utils.js';
+import { eventId, hash, textSummary } from '../normalize-utils.js';
 import { scoreRun } from '../scoring.js';
 import { linkAgentEventParents } from '../event-tree.js';
 
@@ -75,20 +75,23 @@ export function hermesStateRowsToEvents(session, messages) {
     }
   }));
 
-  const firstUser = sortedMessages.find((row) => row?.role === 'user' && row?.content);
-  if (firstUser) {
+  // One user.prompt.submitted event per Hermes user message. Hermes only
+  // records actual user inputs in `messages.role='user'` — no system fluff to
+  // skip.
+  const userRows = sortedMessages.filter((row) => row?.role === 'user' && row?.content);
+  for (const row of userRows) {
+    const text = String(row.content ?? '');
+    if (!text.trim()) continue;
     events.push(makeEvent({
       sessionId,
       type: 'user.prompt.submitted',
-      timestamp: toIso(firstUser.timestamp) ?? startedAt,
-      parts: [sessionId, 'user.prompt.submitted', firstUser.id ?? firstUser.timestamp],
-      payload: (() => {
-        const text = String(firstUser.content ?? '');
-        return {
-          prompt_length: text.length,
-          prompt_summary: text ? `Prompt captured · ${text.length} chars` : null
-        };
-      })()
+      timestamp: toIso(row.timestamp) ?? startedAt,
+      parts: [sessionId, 'user.prompt.submitted', row.id ?? row.timestamp],
+      payload: {
+        prompt_length: text.length,
+        prompt_summary: textSummary(text, 160),
+        prompt_hash: hash(text)
+      }
     }));
   }
 

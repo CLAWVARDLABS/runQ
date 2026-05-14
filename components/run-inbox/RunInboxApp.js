@@ -663,8 +663,44 @@ function runMatchesSearch(session, query) {
   return [
     session.session_id, session.framework, session.satisfaction?.label,
     ...(session.quality?.reasons || []),
-    ...(session.recommendations || []).flatMap((r) => [r.title, r.category, r.summary])
+    ...(session.recommendations || []).flatMap((r) => [r.title, r.category, r.summary]),
+    ...(session.prompt_snippets || [])
   ].filter(Boolean).join(' ').toLowerCase().includes(normalized);
+}
+
+// Find the first prompt snippet that contains the search query (case-
+// insensitive). Returns the snippet string for UI rendering, or null.
+function matchingPromptSnippet(session, query) {
+  const normalized = String(query || '').trim().toLowerCase();
+  if (!normalized) return null;
+  for (const snippet of session.prompt_snippets || []) {
+    if (typeof snippet === 'string' && snippet.toLowerCase().includes(normalized)) {
+      return snippet;
+    }
+  }
+  return null;
+}
+
+// Render a snippet with the matched query wrapped in <mark>. Limits the
+// snippet to ~120 chars centered on the first match.
+function PromptSnippetMatch({ snippet, query }) {
+  if (!snippet || !query) return null;
+  const idx = snippet.toLowerCase().indexOf(query.toLowerCase());
+  if (idx < 0) return null;
+  const start = Math.max(0, idx - 40);
+  const end = Math.min(snippet.length, idx + query.length + 80);
+  const before = (start > 0 ? '…' : '') + snippet.slice(start, idx);
+  const matched = snippet.slice(idx, idx + query.length);
+  const after = snippet.slice(idx + query.length, end) + (end < snippet.length ? '…' : '');
+  return h('p', {
+    className: 'mt-1 line-clamp-1 text-xs text-on-surface-variant',
+    'data-prompt-match': 'true'
+  }, [
+    h('span', { className: 'text-outline', key: 'label' }, 'prompt: '),
+    h('span', { key: 'b' }, before),
+    h('mark', { className: 'rounded-sm bg-primary/15 px-0.5 font-semibold text-primary', key: 'm' }, matched),
+    h('span', { key: 'a' }, after)
+  ]);
 }
 
 function eventMatchesSearch(event, query) {
@@ -1569,6 +1605,7 @@ function RunInbox({ sessions, selectedSessionId, onSelect, runSearch, setRunSear
             h('tbody', { className: 'text-sm' },
               sessions.map((session) => {
                 const verdict = verdictFor(session, t);
+                const matchedPrompt = matchingPromptSnippet(session, runSearch);
                 return h('tr', {
                   className: [
                     'cursor-pointer border-b border-white/30 transition-colors hover:bg-white/60',
@@ -1577,14 +1614,18 @@ function RunInbox({ sessions, selectedSessionId, onSelect, runSearch, setRunSear
                   key: session.session_id,
                   onClick: () => onSelect(session.session_id)
                 }, [
-                  h('td', { className: 'p-md font-mono text-mono' },
+                  h('td', { className: 'p-md font-mono text-mono' }, [
                     h('a', {
                       className: 'text-primary hover:underline',
                       'data-action': 'open-run-trace',
                       href: traceHrefForSession(session.session_id, dbPath),
+                      key: 'link',
                       onClick: (event) => event.stopPropagation()
-                    }, `#${session.session_id}`)
-                  ),
+                    }, `#${session.session_id}`),
+                    matchedPrompt
+                      ? h(PromptSnippetMatch, { key: 'snippet', query: runSearch, snippet: matchedPrompt })
+                      : null
+                  ]),
                   h('td', { className: 'p-md' },
                     h('span', { className: 'flex items-center gap-2' }, [statusDot(verdict.tone), h('span', null, verdict.label)])
                   ),

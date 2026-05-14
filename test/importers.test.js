@@ -312,6 +312,51 @@ test('runAgentCheckup skips hook install when installHooks=false', async () => {
   );
 });
 
+test('claudeCodeSessionRowsToEvents emits one event per user prompt with real snippets', () => {
+  const rows = [
+    { sessionId: 'ses_p', cwd: '/r', timestamp: '2026-05-10T10:00:00.000Z', uuid: 'u1', type: 'user', message: { role: 'user', content: '请帮我重构 API 路由模块' } },
+    {
+      sessionId: 'ses_p',
+      timestamp: '2026-05-10T10:00:05.000Z',
+      message: { id: 'msg_1', role: 'assistant', model: 'claude-opus-4-7', content: [], usage: {} }
+    },
+    // tool_result-only user message — should be skipped
+    {
+      sessionId: 'ses_p',
+      timestamp: '2026-05-10T10:00:08.000Z',
+      uuid: 'u-tool-result',
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'x' }] }
+    },
+    { sessionId: 'ses_p', timestamp: '2026-05-10T10:00:10.000Z', uuid: 'u2', type: 'user', message: { role: 'user', content: '改成命名路由,顺便加上缓存' } },
+    { sessionId: 'ses_p', timestamp: '2026-05-10T10:00:20.000Z', uuid: 'u3', type: 'user', message: { role: 'user', content: '继续' } }
+  ];
+  const events = claudeCodeSessionRowsToEvents(rows);
+  const prompts = events.filter((e) => e.event_type === 'user.prompt.submitted');
+  assert.equal(prompts.length, 3, 'three real user prompts should produce three events');
+  const ids = new Set(prompts.map((e) => e.event_id));
+  assert.equal(ids.size, 3, 'each prompt event must have a unique id');
+  assert.match(prompts[0].payload.prompt_summary, /重构/);
+  assert.match(prompts[1].payload.prompt_summary, /缓存/);
+  assert.equal(prompts[2].payload.prompt_summary, '继续');
+  for (const p of prompts) {
+    assert.equal(typeof p.payload.prompt_length, 'number');
+    assert.match(p.payload.prompt_hash || '', /^sha256:/);
+  }
+});
+
+test('claudeCodeSessionRowsToEvents is idempotent for the multi-prompt path', () => {
+  const rows = [
+    { sessionId: 'ses_idem_p', cwd: '/r', timestamp: '2026-05-10T10:00:00.000Z', uuid: 'u1', type: 'user', message: { role: 'user', content: 'prompt A' } },
+    { sessionId: 'ses_idem_p', timestamp: '2026-05-10T10:00:05.000Z', uuid: 'u2', type: 'user', message: { role: 'user', content: 'prompt B' } }
+  ];
+  const first = claudeCodeSessionRowsToEvents(rows);
+  const second = claudeCodeSessionRowsToEvents(rows);
+  const firstIds = first.filter((e) => e.event_type === 'user.prompt.submitted').map((e) => e.event_id);
+  const secondIds = second.filter((e) => e.event_type === 'user.prompt.submitted').map((e) => e.event_id);
+  assert.deepEqual(firstIds, secondIds, 're-running on the same fixture should produce the same event ids');
+});
+
 test('runAgentCheckup absent result reports hooks_installed=false', async () => {
   const h = home();
   // No .codex dir at all

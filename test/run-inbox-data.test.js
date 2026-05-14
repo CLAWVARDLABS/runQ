@@ -102,3 +102,43 @@ test('getRunInboxSessions caches metrics and recomputes when session events chan
   assert.notEqual(recomputed.quality.trust_score, 7);
   assert.equal(recomputed.event_count, 4);
 });
+
+
+test('getRunInboxSessions populates prompt_snippets from user.prompt.submitted events', () => {
+  const dbPath = join(mkdtempSync(join(tmpdir(), 'runq-data-snippet-')), 'runq.db');
+  const store = new RunqStore(dbPath);
+
+  store.appendEvent(event('ses_cache_api', 'evt_a_start', 'session.started', '2026-05-02T09:00:00.000Z'));
+  store.appendEvent(event('ses_cache_api', 'evt_a_prompt1', 'user.prompt.submitted', '2026-05-02T09:00:30.000Z', {
+    prompt_summary: '帮我给路由模块加上缓存层',
+    prompt_length: 13
+  }));
+  store.appendEvent(event('ses_cache_api', 'evt_a_prompt2', 'user.prompt.submitted', '2026-05-02T09:05:00.000Z', {
+    prompt_summary: '顺便把日志格式化也修一下',
+    prompt_length: 13
+  }));
+
+  store.appendEvent(event('ses_other', 'evt_b_start', 'session.started', '2026-05-02T10:00:00.000Z'));
+  store.appendEvent(event('ses_other', 'evt_b_prompt', 'user.prompt.submitted', '2026-05-02T10:00:30.000Z', {
+    prompt_summary: '重构 README 文档',
+    prompt_length: 11
+  }));
+  store.close();
+
+  const sessions = getRunInboxSessions(dbPath);
+  const a = sessions.find((s) => s.session_id === 'ses_cache_api');
+  const b = sessions.find((s) => s.session_id === 'ses_other');
+
+  assert.deepEqual(a.prompt_snippets, [
+    '帮我给路由模块加上缓存层',
+    '顺便把日志格式化也修一下'
+  ]);
+  assert.deepEqual(b.prompt_snippets, ['重构 README 文档']);
+
+  // Sanity: snippets are searchable substrings — case-insensitive lower-case match
+  // succeeds for the right session only.
+  const matches = (session, q) => session.prompt_snippets.some((s) => s.toLowerCase().includes(q.toLowerCase()));
+  assert.equal(matches(a, '缓存'), true);
+  assert.equal(matches(b, '缓存'), false);
+  assert.equal(matches(b, 'readme'), true);
+});

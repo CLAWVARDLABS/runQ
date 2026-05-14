@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { eventId } from '../normalize-utils.js';
+import { eventId, hash, textSummary } from '../normalize-utils.js';
 import { scoreRun } from '../scoring.js';
 import { linkAgentEventParents } from '../event-tree.js';
 
@@ -85,26 +85,54 @@ export function codexRolloutRowsToEvents(rows, fallbackSessionId = null) {
     }
   }));
 
-  // First user prompt
-  const firstUser = rows.find((row) =>
-    row?.type === 'response_item' &&
-    row?.payload?.type === 'message' &&
-    row?.payload?.role === 'user'
+  // Emit one user.prompt.submitted event per real user message. Codex
+  // emits an `event_msg` with payload.type='user_message' for each real
+  // user input (the response_item user messages also contain auto-injected
+  // AGENTS.md context, which we skip). Falls back to response_item messages
+  // when no event_msg user_message rows exist.
+  const userMessageEvents = rows.filter((row) =>
+    row?.type === 'event_msg' && row?.payload?.type === 'user_message' && typeof row?.payload?.message === 'string'
   );
-  if (firstUser) {
-    events.push(makeEvent({
-      sessionId,
-      type: 'user.prompt.submitted',
-      timestamp: firstUser.timestamp,
-      parts: [sessionId, 'user.prompt.submitted', firstUser.timestamp],
-      payload: (() => {
-        const text = textOfMessage(firstUser.payload);
-        return {
+  if (userMessageEvents.length > 0) {
+    for (const [index, row] of userMessageEvents.entries()) {
+      const text = row.payload.message;
+      if (!text.trim()) continue;
+      events.push(makeEvent({
+        sessionId,
+        type: 'user.prompt.submitted',
+        timestamp: row.timestamp,
+        parts: [sessionId, 'user.prompt.submitted', `${row.timestamp}:${index}`],
+        payload: {
           prompt_length: text.length,
-          prompt_summary: text ? `Prompt captured · ${text.length} chars` : null
-        };
-      })()
-    }));
+          prompt_summary: textSummary(text, 160),
+          prompt_hash: hash(text)
+        }
+      }));
+    }
+  } else {
+    // Older Codex rollouts may not have event_msg/user_message — fall back
+    // to the first response_item user message.
+    const firstUser = rows.find((row) =>
+      row?.type === 'response_item' &&
+      row?.payload?.type === 'message' &&
+      row?.payload?.role === 'user'
+    );
+    if (firstUser) {
+      const text = textOfMessage(firstUser.payload);
+      if (text.trim()) {
+        events.push(makeEvent({
+          sessionId,
+          type: 'user.prompt.submitted',
+          timestamp: firstUser.timestamp,
+          parts: [sessionId, 'user.prompt.submitted', firstUser.timestamp],
+          payload: {
+            prompt_length: text.length,
+            prompt_summary: textSummary(text, 160),
+            prompt_hash: hash(text)
+          }
+        }));
+      }
+    }
   }
 
   // Model calls inferred from turn_context (model + start) and token_count events.
