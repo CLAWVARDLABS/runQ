@@ -2648,8 +2648,22 @@ function DocsPage({ t }) {
 function EvaluationsPage({ sessions, t }) {
   const stats = calcStats(sessions);
   const verified = sessions.filter((s) => Number(s.telemetry?.verification_count || 0) > 0).length;
+  // 满意度采纳 / Satisfaction accepted only counts sessions where the user
+  // explicitly recorded feedback (👍 on a recommendation or `runq accept-
+  // recommendation`). For freshly-imported history with no feedback at all
+  // the metric is always 0/N — surfacing it as a giant stat tile invites
+  // confusion ("why is everything 0?"), so hide the tile until at least one
+  // session actually carries feedback.
+  const hasFeedback = sessions.some((s) => s.satisfaction?.label);
   const accepted = sessions.filter((s) => s.satisfaction?.label === 'accepted').length;
   const reviewQueue = sessions.filter((session) => runMatchesFilter(session, 'needs_review'));
+  const summaryTiles = [
+    summaryStat(t.evalsPassRate, `${(stats.avgConfidence * 100).toFixed(0)}%`, 'good', 'verified'),
+    summaryStat(t.evalsCoverage, `${verified}/${sessions.length}`, 'info', 'task_alt')
+  ];
+  if (hasFeedback) {
+    summaryTiles.push(summaryStat(t.evalsAccepted, `${accepted}/${sessions.length}`, 'good', 'thumb_up_alt'));
+  }
   return h('section', { className: 'space-y-lg', id: 'evaluations' }, [
     h(PageHeader, {
       eyebrow: t.eyebrowEvaluations,
@@ -2657,11 +2671,7 @@ function EvaluationsPage({ sessions, t }) {
       subtitle: t.evalsBody,
       actions: [chip(t.realDataFirst, 'info', 'real-data')]
     }),
-    h('div', { className: 'grid grid-cols-1 md:grid-cols-3 gap-gutter' }, [
-      summaryStat(t.evalsPassRate, `${(stats.avgConfidence * 100).toFixed(0)}%`, 'good', 'verified'),
-      summaryStat(t.evalsCoverage, `${verified}/${sessions.length}`, 'info', 'task_alt'),
-      summaryStat(t.evalsAccepted, `${accepted}/${sessions.length}`, 'good', 'thumb_up_alt')
-    ]),
+    h('div', { className: `grid grid-cols-1 gap-gutter ${hasFeedback ? 'md:grid-cols-3' : 'md:grid-cols-2'}` }, summaryTiles),
     h('div', { className: 'glass-card rounded-3xl p-lg' }, [
       h('div', { className: 'mb-md flex items-center justify-between gap-3' }, [
         h('h3', { className: 'text-h3 font-h3 tracking-tight' }, t.evalQueue),
