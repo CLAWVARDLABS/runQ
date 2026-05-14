@@ -105,6 +105,21 @@ export function stripRawFields(payload) {
   return changed ? next : payload;
 }
 
+// Display/read-time redaction for a single event: strips raw-content keys and
+// marks privacy as metadata-level. Used by the API data layer and the trace
+// explorer so an event captured under privacy-off is still hidden everywhere
+// once privacy mode is on. Returns the same reference when nothing changed.
+export function redactEventForDisplay(event) {
+  if (!event || typeof event !== 'object') return event;
+  const strippedPayload = stripRawFields(event.payload);
+  if (strippedPayload === event.payload) return event;
+  return {
+    ...event,
+    payload: strippedPayload,
+    privacy: { ...event.privacy, level: 'metadata', redacted: true }
+  };
+}
+
 export function privacyLevelFor(privacyMode, redactedLevel) {
   return privacyMode === 'off' ? 'sensitive' : redactedLevel;
 }

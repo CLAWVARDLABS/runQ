@@ -4,6 +4,8 @@ import { basename, extname, join, normalize, relative, sep } from 'node:path';
 import { RunqStore } from './store.js';
 import { scoreRun } from './scoring.js';
 import { recommendRunImprovements } from './recommendations.js';
+import { getPrivacyMode } from './config.js';
+import { redactEventForDisplay } from './normalize-utils.js';
 
 export function defaultRunInboxDbPath() {
   return process.env.RUNQ_DB || '.runq/runq.db';
@@ -199,7 +201,15 @@ export function getRunInboxSessions(dbPath = defaultRunInboxDbPath()) {
 export function getRunInboxEvents(sessionId, dbPath = defaultRunInboxDbPath()) {
   const store = new RunqStore(dbPath);
   try {
-    return store.listEventsForSession(sessionId);
+    const events = store.listEventsForSession(sessionId);
+    // Read-time privacy: events captured while privacy mode was off keep their
+    // raw payload in the DB. When privacy mode is on, strip raw-content keys
+    // before the events leave this layer so the API endpoint, the JSON export,
+    // and the UI all see the same redacted shape. The DB row is untouched.
+    if (getPrivacyMode(dbPath) === 'on') {
+      return events.map(redactEventForDisplay);
+    }
+    return events;
   } finally {
     store.close();
   }

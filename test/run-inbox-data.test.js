@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { getRunInboxSessions } from '../src/run-inbox-data.js';
+import { getRunInboxSessions, getRunInboxEvents } from '../src/run-inbox-data.js';
+import { setPrivacyMode } from '../src/config.js';
 import { RunqStore } from '../src/store.js';
 
 function event(sessionId, eventId, eventType, timestamp, payload = {}) {
@@ -141,4 +142,48 @@ test('getRunInboxSessions populates prompt_snippets from user.prompt.submitted e
   assert.equal(matches(a, '缓存'), true);
   assert.equal(matches(b, '缓存'), false);
   assert.equal(matches(b, 'readme'), true);
+});
+
+test('getRunInboxEvents strips raw payload fields on read when privacy mode is on', () => {
+  const runqDir = join(mkdtempSync(join(tmpdir(), 'runq-data-privacy-')), '.runq');
+  mkdirSync(runqDir, { recursive: true });
+  const dbPath = join(runqDir, 'runq.db');
+
+  // Capture an event WITH raw content (as if privacy mode was off at capture).
+  const store = new RunqStore(dbPath, { redactionPolicy: { disabled: true } });
+  store.appendEvent(event('ses_priv', 'evt_priv_prompt', 'user.prompt.submitted', '2026-05-02T09:00:00.000Z', {
+    prompt: 'leak the database password',
+    prompt_length: 26,
+    prompt_hash: 'sha256:abc'
+  }));
+  store.appendEvent(event('ses_priv', 'evt_priv_cmd', 'command.ended', '2026-05-02T09:01:00.000Z', {
+    command: 'cat .env',
+    cwd: '/repo',
+    output: 'DB_PASSWORD=hunter2',
+    exit_code: 0,
+    binary: 'cat'
+  }));
+  store.close();
+
+  // privacy off (default) → raw fields come through untouched
+  setPrivacyMode('off', dbPath);
+  const rawEvents = getRunInboxEvents('ses_priv', dbPath);
+  const rawPrompt = rawEvents.find((e) => e.event_type === 'user.prompt.submitted');
+  assert.equal(rawPrompt.payload.prompt, 'leak the database password');
+
+  // privacy on → raw-content keys stripped at read time, metadata kept
+  setPrivacyMode('on', dbPath);
+  const safeEvents = getRunInboxEvents('ses_priv', dbPath);
+  const safePrompt = safeEvents.find((e) => e.event_type === 'user.prompt.submitted');
+  assert.equal(safePrompt.payload.prompt, undefined);
+  assert.equal(safePrompt.payload.prompt_length, 26);
+  assert.equal(safePrompt.payload.prompt_hash, 'sha256:abc');
+  assert.equal(safePrompt.privacy.level, 'metadata');
+  assert.equal(safePrompt.privacy.redacted, true);
+  const safeCmd = safeEvents.find((e) => e.event_type === 'command.ended');
+  assert.equal(safeCmd.payload.command, undefined);
+  assert.equal(safeCmd.payload.cwd, undefined);
+  assert.equal(safeCmd.payload.output, undefined);
+  assert.equal(safeCmd.payload.exit_code, 0);
+  assert.equal(safeCmd.payload.binary, 'cat');
 });

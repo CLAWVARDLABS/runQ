@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Background, Controls, Handle, MarkerType, Position, ReactFlow } from '@xyflow/react';
 
 import { linkAgentEventParents } from '../../src/event-tree.js';
-import { stripRawFields } from '../../src/normalize-utils.js';
+import { redactEventForDisplay } from '../../src/normalize-utils.js';
 import { buildAgentActionFlow } from './action-flow.js';
 import { percent, summarizeEvent, trustBreakdownEntries, trustScoreValue } from './format.js';
 
@@ -2441,23 +2441,14 @@ export function AgentTraceExplorer({ initialSessions = [], initialEvents = [], i
 
   const [paletteOpen, setPaletteOpen] = useState(false);
 
-  // Display-time privacy: events captured while privacy mode was off still
-  // carry raw prompt/command/output in the DB. When privacy mode is on, strip
-  // those keys before anything renders so the trace reflects the current
-  // policy — not just future captures. (The DB row is untouched; toggling
-  // back to off reveals the raw fields again.)
-  const displayEvents = useMemo(() => {
-    if (privacyMode !== 'on') return events;
-    return events.map((event) => {
-      const strippedPayload = stripRawFields(event.payload);
-      if (strippedPayload === event.payload) return event;
-      return {
-        ...event,
-        payload: strippedPayload,
-        privacy: { ...event.privacy, level: 'metadata', redacted: true }
-      };
-    });
-  }, [events, privacyMode]);
+  // Display-time privacy: the API already redacts on read, but events fetched
+  // *before* the user flips the toggle are still raw in component state. Re-run
+  // the same redaction here (keyed on privacyMode) so toggling on hides them
+  // immediately without waiting for a refetch. No-op on already-redacted rows.
+  const displayEvents = useMemo(
+    () => (privacyMode === 'on' ? events.map(redactEventForDisplay) : events),
+    [events, privacyMode]
+  );
   const linkedEvents = useMemo(() => eventsWithParentLinks(displayEvents), [displayEvents]);
   const tasks = useMemo(() => buildSessionTasks(linkedEvents, t), [linkedEvents, t]);
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? tasks[0] ?? null;
