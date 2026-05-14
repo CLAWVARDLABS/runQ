@@ -2434,11 +2434,7 @@ export function AgentTraceExplorer({ initialSessions = [], initialEvents = [], i
         h('a', {
           className: 'flex items-center gap-2 rounded-xl bg-surface-container-highest px-4 py-2 font-semibold text-on-surface transition-all hover:bg-surface-container-high',
           href: `/api/sessions/${encodeURIComponent(selectedSession.session_id)}/events`
-        }, [h(MaterialIcon, { className: 'text-[20px]', name: 'download' }), t.exportJson]),
-        h('a', {
-          className: 'flex items-center gap-2 rounded-xl bg-primary text-white px-4 py-2 font-semibold transition-all hover:scale-[1.02] active:scale-95 inner-glow',
-          href: `/sessions?q=${encodeURIComponent(selectedSession.session_id)}`
-        }, [h(MaterialIcon, { className: 'text-[20px]', name: 'arrow_forward' }), t.openSession])
+        }, [h(MaterialIcon, { className: 'text-[20px]', name: 'download' }), t.exportJson])
       ])
     : null;
 

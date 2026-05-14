@@ -180,32 +180,32 @@ test('AgentTraceExplorer renders expandable session traces in Chinese by default
   assert.match(html, /data-click-opens-detail="true"/);
   assert.match(html, /data-action-flow="agent-task-flow"/);
   assert.match(html, /data-flow-layout="timeline-graph"/);
+  assert.match(html, /data-flow-edge-from="evt_prompt" data-flow-edge-to="evt_model"/);
   assert.match(html, /data-flow-edge-from="evt_model" data-flow-edge-to="evt_tool"/);
-  assert.match(html, /data-flow-edge-from="evt_tool" data-flow-edge-to="evt_mcp"/);
-  assert.match(html, /data-flow-edge-from="evt_mcp" data-flow-edge-to="evt_skill"/);
+  assert.match(html, /data-flow-edge-from="evt_model" data-flow-edge-to="evt_mcp"/);
+  assert.match(html, /data-flow-edge-from="evt_model" data-flow-edge-to="evt_skill"/);
   assert.match(html, /data-flow-edge-from="evt_skill" data-flow-edge-to="evt_command"/);
-  assert.match(html, /data-flow-edge-from="evt_command" data-flow-edge-to="evt_file"/);
   assert.doesNotMatch(html, /data-flow-overview="capability-overview"/);
   assert.match(html, /Agent 体验观测/);
   assert.match(html, /导出 JSON/);
-  assert.match(html, /打开会话/);
   assert.match(html, /action="\/sessions"/);
   assert.match(html, /name="q"/);
   assert.match(html, /data-action="open-notifications"/);
   assert.match(html, /href="\/evaluations"/);
-  assert.match(html, /href="\/sessions\?q=ses_trace_1"/);
   assert.match(html, /ses_trace_1/);
-  assert.match(html, /生命周期/);
-  assert.match(html, /data-evidence-list="event-groups"/);
+  assert.match(html, /data-evidence-list="event-tree"/);
+  assert.match(html, /data-event-tree="true"/);
+  assert.match(html, /data-event-tree-node="true" data-event-id="evt_session" data-parent-id="" data-event-depth="0"/);
+  assert.match(html, /data-event-tree-node="true" data-event-id="evt_prompt" data-parent-id="evt_session" data-event-depth="1"/);
+  assert.match(html, /data-event-tree-node="true" data-event-id="evt_model" data-parent-id="evt_prompt" data-event-depth="2"/);
+  assert.match(html, /data-event-tree-node="true" data-event-id="evt_tool" data-parent-id="evt_model" data-event-depth="3"/);
+  assert.match(html, /data-event-tree-node="true" data-event-id="evt_file" data-parent-id="evt_skill" data-event-depth="4"/);
+  assert.match(html, /data-event-tree-node="true" data-event-id="evt_command" data-parent-id="evt_skill" data-event-depth="4"/);
   assert.match(html, /data-workflow-node-type="trigger"/);
   assert.match(html, /data-workflow-node-type="operation"/);
   assert.match(html, /data-workflow-node-type="success"/);
   assert.match(html, /data-workflow-port="input"/);
   assert.match(html, /data-workflow-port="output"/);
-  assert.match(html, /模型/);
-  assert.match(html, /命令与工具/);
-  assert.match(html, /文件与验证/);
-  assert.match(html, /反馈/);
   assert.match(html, /model.call.ended/);
   assert.match(html, /command.ended/);
   assert.match(html, /Test passed: npm/);
@@ -278,6 +278,65 @@ test('AgentTraceExplorer Span Detail defaults to the first task event when no se
   assert.match(html, /data-selected-event-id="evt_prompt"/);
 });
 
+test('AgentTraceExplorer labels default trust scores with no scoring evidence as evidence-limited', () => {
+  const props = traceProps();
+  props.initialSessions = [{
+    session_id: 'ses_evidence_limited',
+    framework: 'claude_code',
+    event_count: 4,
+    started_at: '2026-05-04T10:00:00.000Z',
+    last_event_at: '2026-05-04T10:02:00.000Z',
+    quality: {
+      outcome_confidence: 0.55,
+      trust_score: 55,
+      reasons: []
+    },
+    recommendations: [],
+    satisfaction: null,
+    telemetry: {
+      model_call_count: 1,
+      tool_call_count: 2,
+      command_count: 0,
+      verification_count: 0,
+      file_change_count: 0
+    }
+  }];
+  props.initialEvents = [
+    {
+      event_id: 'evt_limited_prompt',
+      event_type: 'user.prompt.submitted',
+      timestamp: '2026-05-04T10:00:00.000Z',
+      framework: 'claude_code',
+      source: 'import',
+      privacy: { level: 'summary' },
+      payload: { prompt_length: 20 }
+    },
+    {
+      event_id: 'evt_limited_model',
+      event_type: 'model.call.ended',
+      timestamp: '2026-05-04T10:01:00.000Z',
+      framework: 'claude_code',
+      source: 'import',
+      privacy: { level: 'metadata' },
+      payload: { model: 'claude-sonnet-4-6' }
+    },
+    {
+      event_id: 'evt_limited_tool',
+      event_type: 'tool.call.ended',
+      timestamp: '2026-05-04T10:01:30.000Z',
+      framework: 'claude_code',
+      source: 'import',
+      privacy: { level: 'metadata' },
+      payload: { tool_name: 'Bash', status: 'completed' }
+    }
+  ];
+
+  const html = renderToStaticMarkup(React.createElement(AgentTraceExplorer, props));
+
+  assert.match(html, /证据不足/);
+  assert.match(html, /未归一化到文件变更或验证证据/);
+});
+
 test('AgentTraceExplorer can render the English trace shell', () => {
   const html = renderToStaticMarkup(React.createElement(AgentTraceExplorer, {
     ...traceProps(),
@@ -295,8 +354,9 @@ test('AgentTraceExplorer can render the English trace shell', () => {
   assert.match(html, /Task flow/);
   assert.match(html, /Agent Experience Observability/);
   assert.match(html, /Export JSON/);
-  assert.match(html, /Open Session/);
-  assert.match(html, /Commands &amp; Tools/);
+  assert.match(html, /data-evidence-list="event-tree"/);
+  assert.match(html, /data-event-tree-node="true" data-event-id="evt_model" data-parent-id="evt_prompt" data-event-depth="2"/);
+  assert.match(html, /data-event-tree-node="true" data-event-id="evt_tool" data-parent-id="evt_model" data-event-depth="3"/);
   assert.match(html, /Event payload/);
   assert.doesNotMatch(html, /会话列表/);
 });
