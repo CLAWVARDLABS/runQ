@@ -44,6 +44,39 @@ export function textSummary(value, maxLength = 160) {
   return `${normalized.slice(0, maxLength - 3)}...`;
 }
 
+// The exact set of payload keys that `rawFields` may add when privacy mode is
+// off. Kept in sync with every `rawFields(privacyMode, { ... })` call across
+// the adapters and importers. `stripRawFields` uses it for *display-time*
+// redaction: events captured while privacy was off still carry these keys, so
+// turning privacy mode back on has to hide them in the UI even though the DB
+// row itself is unchanged.
+export const RAW_CONTENT_KEYS = new Set([
+  'arguments',
+  'assistant_content',
+  'assistant_text',
+  'assistant_texts',
+  'command',
+  'cwd',
+  'error',
+  'file_path',
+  'from',
+  'history_messages',
+  'input_messages',
+  'last_assistant_message',
+  'output',
+  'params',
+  'prompt',
+  'result',
+  'resumed_from',
+  'session_key',
+  'stderr',
+  'stdout',
+  'tool_input',
+  'tool_output',
+  'tool_response',
+  'transcript_path'
+]);
+
 export function rawFields(privacyMode, fields) {
   if (privacyMode !== 'off') return {};
   if (!fields || typeof fields !== 'object') return {};
@@ -53,6 +86,23 @@ export function rawFields(privacyMode, fields) {
     filtered[key] = value;
   }
   return filtered;
+}
+
+// Drop raw-content keys from a payload for display when privacy mode is on.
+// Returns the same object reference when nothing was stripped so callers can
+// cheaply skip re-rendering.
+export function stripRawFields(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return payload;
+  let changed = false;
+  const next = {};
+  for (const [key, value] of Object.entries(payload)) {
+    if (RAW_CONTENT_KEYS.has(key)) {
+      changed = true;
+      continue;
+    }
+    next[key] = value;
+  }
+  return changed ? next : payload;
 }
 
 export function privacyLevelFor(privacyMode, redactedLevel) {
