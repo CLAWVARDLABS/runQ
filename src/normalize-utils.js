@@ -46,10 +46,7 @@ export function textSummary(value, maxLength = 160) {
 
 // The exact set of payload keys that `rawFields` may add when privacy mode is
 // off. Kept in sync with every `rawFields(privacyMode, { ... })` call across
-// the adapters and importers. `stripRawFields` uses it for *display-time*
-// redaction: events captured while privacy was off still carry these keys, so
-// turning privacy mode back on has to hide them in the UI even though the DB
-// row itself is unchanged.
+// the adapters and importers. These are full, unbounded raw content.
 export const RAW_CONTENT_KEYS = new Set([
   'arguments',
   'assistant_content',
@@ -77,6 +74,23 @@ export const RAW_CONTENT_KEYS = new Set([
   'transcript_path'
 ]);
 
+// Derived but still human-readable content the adapters/importers keep even at
+// `summary`-level capture: prompt/assistant truncations, workspace paths,
+// branch names, session titles. The protocol treats `summary` as acceptable,
+// but the user-facing privacy toggle is intentionally stricter — when it's on,
+// nothing a person can read should surface, only hashes / ids / counts / enums.
+export const DERIVED_CONTENT_KEYS = new Set([
+  'assistant_summary',
+  'git_branch',
+  'prompt_summary',
+  'task_summary',
+  'title',
+  'workspace_dir'
+]);
+
+// Everything hidden at display/read time when privacy mode is on.
+const DISPLAY_REDACT_KEYS = new Set([...RAW_CONTENT_KEYS, ...DERIVED_CONTENT_KEYS]);
+
 export function rawFields(privacyMode, fields) {
   if (privacyMode !== 'off') return {};
   if (!fields || typeof fields !== 'object') return {};
@@ -88,15 +102,12 @@ export function rawFields(privacyMode, fields) {
   return filtered;
 }
 
-// Drop raw-content keys from a payload for display when privacy mode is on.
-// Returns the same object reference when nothing was stripped so callers can
-// cheaply skip re-rendering.
-export function stripRawFields(payload) {
+function stripKeys(payload, keys) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return payload;
   let changed = false;
   const next = {};
   for (const [key, value] of Object.entries(payload)) {
-    if (RAW_CONTENT_KEYS.has(key)) {
+    if (keys.has(key)) {
       changed = true;
       continue;
     }
@@ -105,13 +116,20 @@ export function stripRawFields(payload) {
   return changed ? next : payload;
 }
 
-// Display/read-time redaction for a single event: strips raw-content keys and
-// marks privacy as metadata-level. Used by the API data layer and the trace
-// explorer so an event captured under privacy-off is still hidden everywhere
-// once privacy mode is on. Returns the same reference when nothing changed.
+// Drop only the unbounded raw-content keys from a payload. Returns the same
+// object reference when nothing was stripped.
+export function stripRawFields(payload) {
+  return stripKeys(payload, RAW_CONTENT_KEYS);
+}
+
+// Display/read-time redaction for a single event: strips raw content AND the
+// derived human-readable keys (summaries, paths, branch, title), then marks
+// privacy as metadata-level. Used by the API data layer and the trace explorer
+// so an event captured under privacy-off is hidden everywhere once privacy
+// mode is on. Returns the same reference when nothing changed.
 export function redactEventForDisplay(event) {
   if (!event || typeof event !== 'object') return event;
-  const strippedPayload = stripRawFields(event.payload);
+  const strippedPayload = stripKeys(event.payload, DISPLAY_REDACT_KEYS);
   if (strippedPayload === event.payload) return event;
   return {
     ...event,

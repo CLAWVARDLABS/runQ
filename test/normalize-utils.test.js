@@ -1,7 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isVerificationCommand, rawFields, stripRawFields, RAW_CONTENT_KEYS } from '../src/normalize-utils.js';
+import {
+  isVerificationCommand,
+  rawFields,
+  stripRawFields,
+  redactEventForDisplay,
+  RAW_CONTENT_KEYS,
+  DERIVED_CONTENT_KEYS
+} from '../src/normalize-utils.js';
 
 test('isVerificationCommand detects real test and build commands', () => {
   assert.equal(isVerificationCommand('npm test'), true);
@@ -57,5 +64,53 @@ test('stripRawFields returns the same reference when nothing is raw', () => {
 test('RAW_CONTENT_KEYS covers prompt, command, and tool I/O keys', () => {
   for (const key of ['prompt', 'command', 'cwd', 'stdout', 'stderr', 'output', 'tool_input', 'tool_response', 'params', 'result']) {
     assert.ok(RAW_CONTENT_KEYS.has(key), `RAW_CONTENT_KEYS missing ${key}`);
+  }
+});
+
+test('stripRawFields keeps derived summary keys (only raw content is stripped)', () => {
+  // stripRawFields is intentionally narrow — it does NOT touch prompt_summary etc.
+  const payload = { prompt: 'raw', prompt_summary: 'a short summary', prompt_length: 3 };
+  const stripped = stripRawFields(payload);
+  assert.equal(stripped.prompt, undefined);
+  assert.equal(stripped.prompt_summary, 'a short summary');
+  assert.equal(stripped.prompt_length, 3);
+});
+
+test('redactEventForDisplay strips raw content AND derived human-readable keys', () => {
+  const event = {
+    event_type: 'user.prompt.submitted',
+    privacy: { level: 'summary', redacted: false },
+    payload: {
+      prompt: 'leak the db password',
+      prompt_summary: 'leak the db password',
+      prompt_length: 20,
+      prompt_hash: 'sha256:abc',
+      workspace_dir: '/Users/someone/secret-project',
+      git_branch: 'feature/unreleased'
+    }
+  };
+  const redacted = redactEventForDisplay(event);
+  // raw + derived gone
+  for (const key of ['prompt', 'prompt_summary', 'workspace_dir', 'git_branch']) {
+    assert.equal(redacted.payload[key], undefined, `${key} should be redacted`);
+  }
+  // bounded metadata kept
+  assert.equal(redacted.payload.prompt_length, 20);
+  assert.equal(redacted.payload.prompt_hash, 'sha256:abc');
+  // privacy marked
+  assert.equal(redacted.privacy.level, 'metadata');
+  assert.equal(redacted.privacy.redacted, true);
+  // original untouched
+  assert.equal(event.payload.prompt, 'leak the db password');
+});
+
+test('redactEventForDisplay returns same reference when there is nothing to redact', () => {
+  const event = { event_type: 'command.ended', privacy: { level: 'metadata' }, payload: { exit_code: 0, binary: 'npm' } };
+  assert.equal(redactEventForDisplay(event), event);
+});
+
+test('DERIVED_CONTENT_KEYS covers summaries, workspace path, branch, and title', () => {
+  for (const key of ['prompt_summary', 'assistant_summary', 'task_summary', 'workspace_dir', 'git_branch', 'title']) {
+    assert.ok(DERIVED_CONTENT_KEYS.has(key), `DERIVED_CONTENT_KEYS missing ${key}`);
   }
 });
