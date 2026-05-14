@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 
 import { RunqStore } from '../../src/store.js';
+import { getPrivacyMode } from '../../src/config.js';
 import { normalizeClaudeCodeHook } from './normalize.js';
 
 function parseDbPath(args) {
@@ -20,7 +21,8 @@ export function main(argv = process.argv.slice(2)) {
   const dbPath = parseDbPath(argv);
   const rawInput = readStdin();
   const input = JSON.parse(rawInput);
-  const events = normalizeClaudeCodeHook(input);
+  const privacyMode = getPrivacyMode(dbPath);
+  const events = normalizeClaudeCodeHook(input, { privacyMode });
 
   const store = new RunqStore(dbPath);
   for (const event of events) {

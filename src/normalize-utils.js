@@ -43,3 +43,22 @@ export function textSummary(value, maxLength = 160) {
   }
   return `${normalized.slice(0, maxLength - 3)}...`;
 }
+
+export function rawFields(privacyMode, fields) {
+  if (privacyMode !== 'off') return {};
+  if (!fields || typeof fields !== 'object') return {};
+  const filtered = {};
+  for (const [key, value] of Object.entries(fields)) {
+    if (value === undefined) continue;
+    filtered[key] = value;
+  }
+  return filtered;
+}
+
+export function privacyLevelFor(privacyMode, redactedLevel) {
+  return privacyMode === 'off' ? 'sensitive' : redactedLevel;
+}
+
+export function privacyRedactedFor(privacyMode) {
+  return privacyMode !== 'off';
+}

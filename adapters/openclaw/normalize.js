@@ -5,6 +5,9 @@ import {
   isVerificationCommand,
   metadataHash,
   objectKeyCount,
+  privacyLevelFor,
+  privacyRedactedFor,
+  rawFields,
   textSummary
 } from '../../src/normalize-utils.js';
 
@@ -56,7 +59,7 @@ function workspaceDir(input) {
   return context(input).workspaceDir ?? event(input).workspaceDir ?? input.cwd;
 }
 
-function baseEvent(input, eventType, now, privacyLevel, payload) {
+function baseEvent(input, eventType, now, privacyLevel, payload, privacyMode) {
   const resolvedSessionId = sessionId(input);
   const resolvedRunId = runId(input);
   const hook = hookName(input) ?? input.stream ?? 'import';
@@ -85,60 +88,64 @@ function baseEvent(input, eventType, now, privacyLevel, payload) {
     } : undefined,
     privacy: {
       level: privacyLevel,
-      redacted: true
+      redacted: privacyRedactedFor(privacyMode)
     },
     payload
   };
 }
 
-function sessionStarted(input, now) {
+function sessionStarted(input, now, privacyMode) {
   const evt = event(input);
   const ctx = context(input);
   return baseEvent(input, 'session.started', now, 'metadata', {
     agent_name: ctx.agentId ?? 'OpenClaw',
     session_key_hash: hash(evt.sessionKey ?? ctx.sessionKey),
-    resumed_from_hash: evt.resumedFrom ? hash(evt.resumedFrom) : undefined
-  });
+    resumed_from_hash: evt.resumedFrom ? hash(evt.resumedFrom) : undefined,
+    ...rawFields(privacyMode, { session_key: evt.sessionKey ?? ctx.sessionKey, resumed_from: evt.resumedFrom })
+  }, privacyMode);
 }
 
-function sessionEnded(input, now) {
+function sessionEnded(input, now, privacyMode) {
   const evt = event(input);
   return baseEvent(input, 'session.ended', now, 'metadata', {
     ended_reason: evt.reason ?? 'session_end',
     session_key_hash: hash(evt.sessionKey),
     message_count: evt.messageCount,
-    duration_ms: evt.durationMs
-  });
+    duration_ms: evt.durationMs,
+    ...rawFields(privacyMode, { session_key: evt.sessionKey })
+  }, privacyMode);
 }
 
-function agentEnded(input, now) {
+function agentEnded(input, now, privacyMode) {
   const evt = event(input);
   return baseEvent(input, 'session.ended', now, 'metadata', {
     ended_reason: evt.success === false ? 'error' : 'agent_end',
     success: evt.success,
     error_hash: evt.error ? hash(evt.error) : undefined,
-    duration_ms: evt.durationMs
-  });
+    duration_ms: evt.durationMs,
+    ...rawFields(privacyMode, { error: evt.error })
+  }, privacyMode);
 }
 
-function llmInput(input, now) {
+function llmInput(input, now, privacyMode) {
   const evt = event(input);
   const prompt = evt.prompt ?? '';
-  return baseEvent(input, 'model.call.started', now, 'summary', {
+  return baseEvent(input, 'model.call.started', now, privacyLevelFor(privacyMode, 'summary'), {
     provider: evt.provider,
     model: evt.model,
     prompt_hash: hash(prompt),
     prompt_summary: textSummary(prompt),
     prompt_length: String(prompt).length,
     history_messages_count: Array.isArray(evt.historyMessages) ? evt.historyMessages.length : undefined,
-    images_count: evt.imagesCount
-  });
+    images_count: evt.imagesCount,
+    ...rawFields(privacyMode, { prompt, history_messages: evt.historyMessages })
+  }, privacyMode);
 }
 
-function llmOutput(input, now) {
+function llmOutput(input, now, privacyMode) {
   const evt = event(input);
   const assistantTexts = Array.isArray(evt.assistantTexts) ? evt.assistantTexts.join('\n') : '';
-  return baseEvent(input, 'model.call.ended', now, 'summary', {
+  return baseEvent(input, 'model.call.ended', now, privacyLevelFor(privacyMode, 'summary'), {
     provider: evt.provider,
     model: evt.model,
     assistant_summary: textSummary(assistantTexts),
@@ -147,11 +154,12 @@ function llmOutput(input, now) {
     output_tokens: evt.usage?.output,
     cache_read_tokens: evt.usage?.cacheRead,
     cache_write_tokens: evt.usage?.cacheWrite,
-    total_tokens: evt.usage?.total
-  });
+    total_tokens: evt.usage?.total,
+    ...rawFields(privacyMode, { assistant_texts: evt.assistantTexts })
+  }, privacyMode);
 }
 
-function modelCallStarted(input, now) {
+function modelCallStarted(input, now, privacyMode) {
   const evt = event(input);
   return baseEvent(input, 'model.call.started', now, 'metadata', {
     provider: evt.provider,
@@ -160,10 +168,10 @@ function modelCallStarted(input, now) {
     transport: evt.transport,
     call_id_hash: hash(evt.callId),
     session_key_hash: hash(evt.sessionKey)
-  });
+  }, privacyMode);
 }
 
-function modelCallEnded(input, now) {
+function modelCallEnded(input, now, privacyMode) {
   const evt = event(input);
   return baseEvent(input, 'model.call.ended', now, 'metadata', {
     provider: evt.provider,
@@ -180,18 +188,19 @@ function modelCallEnded(input, now) {
     response_stream_bytes: evt.responseStreamBytes,
     time_to_first_byte_ms: evt.timeToFirstByteMs,
     upstream_request_id_hash: evt.upstreamRequestIdHash
-  });
+  }, privacyMode);
 }
 
-function userPrompt(input, now) {
+function userPrompt(input, now, privacyMode) {
   const evt = event(input);
   const content = evt.content ?? evt.prompt ?? '';
-  return baseEvent(input, 'user.prompt.submitted', now, 'summary', {
+  return baseEvent(input, 'user.prompt.submitted', now, privacyLevelFor(privacyMode, 'summary'), {
     from_hash: hash(evt.from),
     prompt_hash: hash(content),
     prompt_summary: textSummary(content),
-    prompt_length: String(content).length
-  });
+    prompt_length: String(content).length,
+    ...rawFields(privacyMode, { from: evt.from, prompt: content })
+  }, privacyMode);
 }
 
 function isCommandTool(name) {
@@ -219,18 +228,19 @@ function toolSkillName(input) {
   return evt.skillName ?? evt.skill_name ?? evt.params?.skill_name ?? evt.params?.skillName ?? ctx.skillName ?? ctx.skill_name;
 }
 
-function commandStarted(input, now) {
+function commandStarted(input, now, privacyMode) {
   const evt = event(input);
   const command = commandFromEvent(evt);
-  return baseEvent(input, 'command.started', now, 'metadata', {
+  return baseEvent(input, 'command.started', now, privacyLevelFor(privacyMode, 'metadata'), {
     command_id: evt.toolCallId ?? hash(command),
     command_kind: 'shell',
     binary: binaryFromCommand(command),
     args_hash: hash(command),
     cwd_hash: hash(workspaceDir(input)),
     is_verification: isVerificationCommand(command),
-    verification_kind: isVerificationCommand(command) ? 'command' : undefined
-  });
+    verification_kind: isVerificationCommand(command) ? 'command' : undefined,
+    ...rawFields(privacyMode, { command, cwd: workspaceDir(input) })
+  }, privacyMode);
 }
 
 function exitCodeFromToolResult(evt) {
@@ -252,11 +262,11 @@ function exitCodeFromToolResult(evt) {
   return evt.result?.success === false ? 1 : 0;
 }
 
-function commandEnded(input, now) {
+function commandEnded(input, now, privacyMode) {
   const evt = event(input);
   const command = commandFromEvent(evt);
   const durationMs = evt.durationMs ?? evt.result?.details?.durationMs;
-  return baseEvent(input, 'command.ended', now, 'metadata', {
+  return baseEvent(input, 'command.ended', now, privacyLevelFor(privacyMode, 'metadata'), {
     command_id: evt.toolCallId ?? hash(command),
     command_kind: 'shell',
     binary: binaryFromCommand(command),
@@ -268,29 +278,31 @@ function commandEnded(input, now) {
     output_hash: hash(evt.result?.output),
     duration_ms: durationMs,
     is_verification: isVerificationCommand(command),
-    verification_kind: isVerificationCommand(command) ? 'command' : undefined
-  });
+    verification_kind: isVerificationCommand(command) ? 'command' : undefined,
+    ...rawFields(privacyMode, { command, cwd: workspaceDir(input), stdout: evt.result?.stdout, stderr: evt.result?.stderr ?? evt.error, output: evt.result?.output })
+  }, privacyMode);
 }
 
-function toolStarted(input, now) {
+function toolStarted(input, now, privacyMode) {
   const evt = event(input);
   const actionInput = evt.params;
-  return baseEvent(input, 'tool.call.started', now, 'metadata', {
+  return baseEvent(input, 'tool.call.started', now, privacyLevelFor(privacyMode, 'metadata'), {
     tool_name: evt.toolName ?? context(input).toolName ?? 'unknown',
     tool_type: 'openclaw_tool',
     tool_call_id: evt.toolCallId ?? hash(JSON.stringify(evt.params ?? {})),
     mcp_server: toolMcpServer(input),
     skill_name: toolSkillName(input),
     input_hash: metadataHash(actionInput),
-    input_key_count: objectKeyCount(actionInput)
-  });
+    input_key_count: objectKeyCount(actionInput),
+    ...rawFields(privacyMode, { params: actionInput })
+  }, privacyMode);
 }
 
-function toolEnded(input, now) {
+function toolEnded(input, now, privacyMode) {
   const evt = event(input);
   const actionInput = evt.params;
   const actionOutput = evt.result;
-  return baseEvent(input, 'tool.call.ended', now, 'metadata', {
+  return baseEvent(input, 'tool.call.ended', now, privacyLevelFor(privacyMode, 'metadata'), {
     tool_name: evt.toolName ?? context(input).toolName ?? 'unknown',
     tool_type: 'openclaw_tool',
     tool_call_id: evt.toolCallId ?? hash(JSON.stringify(evt.params ?? {})),
@@ -301,11 +313,12 @@ function toolEnded(input, now) {
     input_hash: metadataHash(actionInput),
     input_key_count: objectKeyCount(actionInput),
     output_hash: metadataHash(actionOutput),
-    output_key_count: objectKeyCount(actionOutput)
-  });
+    output_key_count: objectKeyCount(actionOutput),
+    ...rawFields(privacyMode, { params: actionInput, result: actionOutput, error: evt.error })
+  }, privacyMode);
 }
 
-function nodeExecFinished(input, now) {
+function nodeExecFinished(input, now, privacyMode) {
   const data = input.data ?? {};
   const command = data.command ?? '';
   return baseEvent({
@@ -314,7 +327,7 @@ function nodeExecFinished(input, now) {
       sessionKey: data.sessionKey ?? input.sessionKey,
       runId: data.runId ?? input.runId
     }
-  }, 'command.ended', now, 'metadata', {
+  }, 'command.ended', now, privacyLevelFor(privacyMode, 'metadata'), {
     command_id: hash(command),
     command_kind: 'shell',
     binary: binaryFromCommand(command),
@@ -323,41 +336,43 @@ function nodeExecFinished(input, now) {
     output_hash: hash(data.output),
     timed_out: data.timedOut,
     is_verification: isVerificationCommand(command),
-    verification_kind: isVerificationCommand(command) ? 'command' : undefined
-  });
+    verification_kind: isVerificationCommand(command) ? 'command' : undefined,
+    ...rawFields(privacyMode, { command, output: data.output })
+  }, privacyMode);
 }
 
 export function normalizeOpenClawEvent(input, options = {}) {
   const now = options.now ?? new Date().toISOString();
+  const privacyMode = options.privacyMode ?? 'on';
   const hook = hookName(input);
   const evt = event(input);
 
   if (input.stream === 'tool' && input.data?.type === 'exec.finished') {
-    return [nodeExecFinished(input, now)];
+    return [nodeExecFinished(input, now, privacyMode)];
   }
 
   switch (hook) {
     case 'session_start':
-      return [sessionStarted(input, now)];
+      return [sessionStarted(input, now, privacyMode)];
     case 'session_end':
-      return [sessionEnded(input, now)];
+      return [sessionEnded(input, now, privacyMode)];
     case 'agent_end':
-      return [agentEnded(input, now)];
+      return [agentEnded(input, now, privacyMode)];
     case 'model_call_started':
-      return [modelCallStarted(input, now)];
+      return [modelCallStarted(input, now, privacyMode)];
     case 'model_call_ended':
-      return [modelCallEnded(input, now)];
+      return [modelCallEnded(input, now, privacyMode)];
     case 'llm_input':
-      return [llmInput(input, now)];
+      return [llmInput(input, now, privacyMode)];
     case 'llm_output':
-      return [llmOutput(input, now)];
+      return [llmOutput(input, now, privacyMode)];
     case 'message_received':
-      return [userPrompt(input, now)];
+      return [userPrompt(input, now, privacyMode)];
     case 'before_tool_call':
-      return isCommandTool(evt.toolName) ? [commandStarted(input, now)] : [toolStarted(input, now)];
+      return isCommandTool(evt.toolName) ? [commandStarted(input, now, privacyMode)] : [toolStarted(input, now, privacyMode)];
     case 'after_tool_call':
     case 'tool_result_persist':
-      return isCommandTool(evt.toolName ?? context(input).toolName) ? [commandEnded(input, now)] : [toolEnded(input, now)];
+      return isCommandTool(evt.toolName ?? context(input).toolName) ? [commandEnded(input, now, privacyMode)] : [toolEnded(input, now, privacyMode)];
     default:
       return [];
   }

@@ -43,10 +43,12 @@ test('redactEvent removes raw prompts, command output, and secret-looking string
   assert.equal(redacted.payload.exit_code, 0);
 });
 
-test('RunqStore redacts events before persistence', () => {
+test('RunqStore redacts events before persistence when an explicit policy is pinned', () => {
   const dir = mkdtempSync(join(tmpdir(), 'runq-redaction-store-'));
   const dbPath = join(dir, 'runq.db');
-  const store = new RunqStore(dbPath);
+  // Pin an explicit redaction policy so this test exercises redaction
+  // independently of the user-facing privacy toggle (which defaults to off).
+  const store = new RunqStore(dbPath, { redactionPolicy: {} });
   store.appendEvent(event({
     output: 'secret_token=abc123',
     exit_code: 0
@@ -58,6 +60,27 @@ test('RunqStore redacts events before persistence', () => {
   assert.equal(stored.privacy.redacted, true);
   assert.equal(stored.payload.output, '[redacted]');
   assert.equal(stored.payload.exit_code, 0);
+});
+
+test('RunqStore keeps raw payload when privacy mode defaults off (no policy override)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'runq-redaction-store-off-'));
+  const dbPath = join(dir, '.runq', 'runq.db');
+  // dbPath inside .runq/ — config.js will resolve the config to that dir.
+  // No config file written → defaults to privacyMode='off' → redaction disabled.
+  const store = new RunqStore(dbPath);
+  store.appendEvent(event({
+    output: 'secret_token=abc123',
+    exit_code: 0
+  }));
+  const [stored] = store.listEventsForSession('ses_redact_1');
+  store.close();
+  assert.equal(stored.payload.output, 'secret_token=abc123');
+});
+
+test('redactEvent short-circuits when policy.disabled is true', () => {
+  const original = event({ command: 'rm -rf /', stdout: 'gone' });
+  const result = redactEvent(original, { disabled: true });
+  assert.strictEqual(result, original);
 });
 
 test('redactEvent preserves safe numeric metadata used by scoring and cost analysis', () => {

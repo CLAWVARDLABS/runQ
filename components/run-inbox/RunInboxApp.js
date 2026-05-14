@@ -21,8 +21,8 @@ const copy = {
     notifications: '提醒',
     privacyModeOn: '隐私模式 · 开',
     privacyModeOff: '隐私模式 · 关',
-    privacyModeTooltipOn: '隐私模式开启 · 显示 metadata-first 提示与脱敏标记',
-    privacyModeTooltipOff: '隐私模式关闭 · 隐藏 metadata-first 提示',
+    privacyModeTooltipOn: '隐私模式开启 · 采集层保留 hash/摘要，落库前再脱敏一次；只影响之后的事件，已落库数据不变',
+    privacyModeTooltipOff: '隐私模式关闭 · 原始 prompt / 命令 / 输出会被完整捕获并入库；只影响之后的事件',
     notificationCenter: '提醒中心',
     notificationCenterBody: '集中处理新建议、已采纳但待验证的改进项，以及已经被后续运行验证的结果。',
     pendingRecommendations: '待处理建议',
@@ -262,8 +262,8 @@ const copy = {
     languageToggle: '中文',
     privacyModeOn: 'Privacy mode · on',
     privacyModeOff: 'Privacy mode · off',
-    privacyModeTooltipOn: 'Privacy mode on — metadata-first notes and redaction badges visible',
-    privacyModeTooltipOff: 'Privacy mode off — metadata-first notes hidden',
+    privacyModeTooltipOn: 'Privacy mode on — adapters capture hashes/summaries only and the store redacts again before write. Affects future events; existing data is unchanged.',
+    privacyModeTooltipOff: 'Privacy mode off — raw prompt / command / output is captured and persisted. Affects future events only.',
     notifications: 'Notifications',
     notificationCenter: 'Notification Center',
     notificationCenterBody: 'Triage new recommendations, accepted improvements awaiting validation, and items verified by later runs.',
@@ -2792,12 +2792,39 @@ export function RunInboxApp({ initialSessions = [], initialEvents = [], setupHea
     const normalized = normalizeLang(stored);
     if (stored && normalized !== lang) setLangState(normalized);
     setPrivacyModeState(getStoredPrivacyMode());
+    const url = appendDbParam('/api/config/privacy-mode', dbPath);
+    fetch(url)
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => {
+        if (data?.mode) {
+          setPrivacyModeState(data.mode);
+          setStoredPrivacyMode(data.mode);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   function togglePrivacyMode() {
     setPrivacyModeState((prev) => {
       const next = prev === 'on' ? 'off' : 'on';
       setStoredPrivacyMode(next);
+      const url = appendDbParam('/api/config/privacy-mode', dbPath);
+      fetch(url, {
+        body: JSON.stringify({ mode: next }),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST'
+      })
+        .then((response) => response.ok ? response.json() : null)
+        .then((data) => {
+          if (data?.mode && data.mode !== next) {
+            setPrivacyModeState(data.mode);
+            setStoredPrivacyMode(data.mode);
+          }
+        })
+        .catch(() => {
+          setPrivacyModeState(prev);
+          setStoredPrivacyMode(prev);
+        });
       return next;
     });
   }

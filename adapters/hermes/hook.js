@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 
 import { RunqStore } from '../../src/store.js';
+import { getPrivacyMode } from '../../src/config.js';
 import { normalizeHermesEvent } from './normalize.js';
 
 function parseArgs(argv) {
@@ -44,7 +45,8 @@ export function main(argv = process.argv.slice(2)) {
   }
 
   const payload = JSON.parse(raw);
-  const events = normalizeHermesEvent(payload);
+  const privacyMode = getPrivacyMode(args.db);
+  const events = normalizeHermesEvent(payload, { privacyMode });
   const store = new RunqStore(args.db);
   for (const event of events) {
     store.appendEvent(event);

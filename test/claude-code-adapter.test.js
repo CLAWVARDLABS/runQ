@@ -122,3 +122,33 @@ test('Claude Code hook command reads stdin and appends normalized events', () =>
   assert.equal(events[0].event_type, 'session.ended');
   assert.equal(events[0].payload.ended_reason, 'other');
 });
+
+test('normalizeClaudeCodeHook keeps raw prompt/command/output when privacyMode=off', () => {
+  const [prompt] = normalizeClaudeCodeHook({
+    session_id: 'claude-raw-1',
+    cwd: '/repo/app',
+    hook_event_name: 'UserPromptSubmit',
+    prompt: 'Find the SQL injection in checkout.ts'
+  }, { now: '2026-05-02T13:00:00.000Z', privacyMode: 'off' });
+
+  assert.equal(prompt.privacy.level, 'sensitive');
+  assert.equal(prompt.privacy.redacted, false);
+  assert.equal(prompt.payload.prompt, 'Find the SQL injection in checkout.ts');
+  assert.match(prompt.payload.prompt_hash, /^sha256:/);
+
+  const [cmdEnded] = normalizeClaudeCodeHook({
+    session_id: 'claude-raw-1',
+    cwd: '/repo/app',
+    hook_event_name: 'PostToolUse',
+    tool_name: 'Bash',
+    tool_use_id: 'toolu_raw',
+    tool_input: { command: 'rg --hidden secret' },
+    tool_response: { stdout: 'matched: hunter2', stderr: '', interrupted: false }
+  }, { now: '2026-05-02T13:01:00.000Z', privacyMode: 'off' });
+
+  assert.equal(cmdEnded.privacy.level, 'sensitive');
+  assert.equal(cmdEnded.privacy.redacted, false);
+  assert.equal(cmdEnded.payload.command, 'rg --hidden secret');
+  assert.equal(cmdEnded.payload.stdout, 'matched: hunter2');
+  assert.equal(cmdEnded.payload.cwd, '/repo/app');
+});

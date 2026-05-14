@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 
 import { normalizeOpenClawEvent } from './normalize.js';
 import { RunqStore } from '../../src/store.js';
+import { getPrivacyMode } from '../../src/config.js';
 
 function parseArgs(argv) {
   const args = {
@@ -37,7 +38,8 @@ if (!raw) {
 }
 
 const input = JSON.parse(raw);
-const events = normalizeOpenClawEvent(input);
+const privacyMode = getPrivacyMode(args.db);
+const events = normalizeOpenClawEvent(input, { privacyMode });
 const store = new RunqStore(args.db);
 
 try {

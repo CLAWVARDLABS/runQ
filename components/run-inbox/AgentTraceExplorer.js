@@ -50,8 +50,8 @@ const traceCopy = {
     closeDialog: '关闭',
     privacyModeOn: '隐私模式 · 开',
     privacyModeOff: '隐私模式 · 关',
-    privacyModeTooltipOn: '隐私模式开启 · 显示 metadata-first 提示与脱敏标记',
-    privacyModeTooltipOff: '隐私模式关闭 · 隐藏 metadata-first 提示',
+    privacyModeTooltipOn: '隐私模式开启 · 采集层保留 hash/摘要，落库前再脱敏一次；只影响之后的事件，已落库数据不变',
+    privacyModeTooltipOff: '隐私模式关闭 · 原始 prompt / 命令 / 输出会被完整捕获并入库；只影响之后的事件',
     eyebrow: 'Trace Telemetry',
     sessionList: '会话列表',
     allAgents: '全部 Agent',
@@ -180,8 +180,8 @@ const traceCopy = {
     closeDialog: 'Close',
     privacyModeOn: 'Privacy mode · on',
     privacyModeOff: 'Privacy mode · off',
-    privacyModeTooltipOn: 'Privacy mode on — metadata-first notes and redaction badges visible',
-    privacyModeTooltipOff: 'Privacy mode off — metadata-first notes hidden',
+    privacyModeTooltipOn: 'Privacy mode on — adapters capture hashes/summaries only and the store redacts again before write. Affects future events; existing data is unchanged.',
+    privacyModeTooltipOff: 'Privacy mode off — raw prompt / command / output is captured and persisted. Affects future events only.',
     eyebrow: 'Trace Telemetry',
     sessionList: 'Session List',
     allAgents: 'All agents',
@@ -2343,13 +2343,42 @@ export function AgentTraceExplorer({ initialSessions = [], initialEvents = [], i
     const stored = getStoredLang();
     const normalized = normalizeLang(stored);
     if (stored && normalized !== lang) setLangState(normalized);
+    // Optimistic hydrate from localStorage so the UI doesn't flash, then
+    // re-sync from the server (the source of truth — adapters and store read
+    // it via .runq/config.json).
     setPrivacyModeState(getStoredPrivacyMode());
+    fetch('/api/config/privacy-mode')
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => {
+        if (data?.mode) {
+          setPrivacyModeState(data.mode);
+          setStoredPrivacyMode(data.mode);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   function togglePrivacyMode() {
     setPrivacyModeState((prev) => {
       const next = prev === 'on' ? 'off' : 'on';
+      // Optimistic local update; if the POST fails, fall back to the prior state.
       setStoredPrivacyMode(next);
+      fetch('/api/config/privacy-mode', {
+        body: JSON.stringify({ mode: next }),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST'
+      })
+        .then((response) => response.ok ? response.json() : null)
+        .then((data) => {
+          if (data?.mode && data.mode !== next) {
+            setPrivacyModeState(data.mode);
+            setStoredPrivacyMode(data.mode);
+          }
+        })
+        .catch(() => {
+          setPrivacyModeState(prev);
+          setStoredPrivacyMode(prev);
+        });
       return next;
     });
   }

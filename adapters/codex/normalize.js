@@ -5,6 +5,9 @@ import {
   isVerificationCommand,
   metadataHash,
   objectKeyCount,
+  privacyLevelFor,
+  privacyRedactedFor,
+  rawFields,
   textSummary
 } from '../../src/normalize-utils.js';
 
@@ -14,7 +17,7 @@ function sessionId(input) {
   return input.session_id ?? input['turn-id'] ?? input.turn_id ?? 'codex-session-unknown';
 }
 
-function baseEvent(input, eventType, now, privacyLevel, payload) {
+function baseEvent(input, eventType, now, privacyLevel, payload, privacyMode) {
   const resolvedSessionId = sessionId(input);
   return {
     runq_version: runqVersion,
@@ -33,7 +36,7 @@ function baseEvent(input, eventType, now, privacyLevel, payload) {
     } : undefined,
     privacy: {
       level: privacyLevel,
-      redacted: true
+      redacted: privacyRedactedFor(privacyMode)
     },
     payload
   };
@@ -55,50 +58,55 @@ function toolSkillName(input) {
   return input.skill_name ?? input.skillName ?? input.tool_input?.skill_name ?? input.tool_input?.skillName;
 }
 
-function sessionStarted(input, now) {
+function sessionStarted(input, now, privacyMode) {
   return baseEvent(input, 'session.started', now, 'metadata', {
     agent_name: 'Codex',
     model: input.model ?? 'unknown',
     started_reason: input.source ?? 'startup',
-    agent_type: input.agent_type ?? 'default'
-  });
+    agent_type: input.agent_type ?? 'default',
+    ...rawFields(privacyMode, { cwd: input.cwd })
+  }, privacyMode);
 }
 
-function sessionEnded(input, now) {
+function sessionEnded(input, now, privacyMode) {
+  const lastMessage = input['last-assistant-message'] ?? input.last_assistant_message;
   return baseEvent(input, 'session.ended', now, 'metadata', {
     ended_reason: input.reason ?? input.type ?? input.hook_event_name ?? 'unknown',
-    last_assistant_message_hash: hash(input['last-assistant-message'] ?? input.last_assistant_message),
-    input_messages_count: Array.isArray(input['input-messages']) ? input['input-messages'].length : undefined
-  });
+    last_assistant_message_hash: hash(lastMessage),
+    input_messages_count: Array.isArray(input['input-messages']) ? input['input-messages'].length : undefined,
+    ...rawFields(privacyMode, { last_assistant_message: lastMessage, input_messages: input['input-messages'] })
+  }, privacyMode);
 }
 
-function userPromptSubmitted(input, now) {
+function userPromptSubmitted(input, now, privacyMode) {
   const prompt = input.prompt ?? input.input ?? '';
-  return baseEvent(input, 'user.prompt.submitted', now, 'summary', {
+  return baseEvent(input, 'user.prompt.submitted', now, privacyLevelFor(privacyMode, 'summary'), {
     prompt_hash: hash(prompt),
     prompt_summary: textSummary(prompt),
-    prompt_length: String(prompt).length
-  });
+    prompt_length: String(prompt).length,
+    ...rawFields(privacyMode, { prompt })
+  }, privacyMode);
 }
 
-function commandStarted(input, now) {
+function commandStarted(input, now, privacyMode) {
   const command = commandFromInput(input);
-  return baseEvent(input, 'command.started', now, 'metadata', {
+  return baseEvent(input, 'command.started', now, privacyLevelFor(privacyMode, 'metadata'), {
     command_id: input.tool_use_id ?? hash(command),
     command_kind: 'shell',
     binary: binaryFromCommand(command),
     args_hash: hash(command),
     cwd_hash: hash(input.cwd),
     is_verification: isVerificationCommand(command),
-    verification_kind: isVerificationCommand(command) ? 'command' : undefined
-  });
+    verification_kind: isVerificationCommand(command) ? 'command' : undefined,
+    ...rawFields(privacyMode, { command, cwd: input.cwd })
+  }, privacyMode);
 }
 
-function commandEnded(input, now) {
+function commandEnded(input, now, privacyMode) {
   const command = commandFromInput(input);
   const response = input.tool_response ?? {};
   const exitCode = Number.isInteger(response.exit_code) ? response.exit_code : response.error ? 1 : 0;
-  return baseEvent(input, 'command.ended', now, 'metadata', {
+  return baseEvent(input, 'command.ended', now, privacyLevelFor(privacyMode, 'metadata'), {
     command_id: input.tool_use_id ?? hash(command),
     command_kind: 'shell',
     binary: binaryFromCommand(command),
@@ -108,27 +116,29 @@ function commandEnded(input, now) {
     stdout_hash: hash(response.stdout),
     stderr_hash: hash(response.stderr),
     is_verification: isVerificationCommand(command),
-    verification_kind: isVerificationCommand(command) ? 'command' : undefined
-  });
+    verification_kind: isVerificationCommand(command) ? 'command' : undefined,
+    ...rawFields(privacyMode, { command, cwd: input.cwd, stdout: response.stdout, stderr: response.stderr })
+  }, privacyMode);
 }
 
-function toolStarted(input, now) {
+function toolStarted(input, now, privacyMode) {
   const actionInput = input.tool_input;
-  return baseEvent(input, 'tool.call.started', now, 'metadata', {
+  return baseEvent(input, 'tool.call.started', now, privacyLevelFor(privacyMode, 'metadata'), {
     tool_name: input.tool_name ?? 'unknown',
     tool_type: 'codex_tool',
     tool_call_id: input.tool_use_id ?? hash(JSON.stringify(input.tool_input ?? {})),
     mcp_server: toolMcpServer(input),
     skill_name: toolSkillName(input),
     input_hash: metadataHash(actionInput),
-    input_key_count: objectKeyCount(actionInput)
-  });
+    input_key_count: objectKeyCount(actionInput),
+    ...rawFields(privacyMode, { tool_input: actionInput })
+  }, privacyMode);
 }
 
-function toolEnded(input, now) {
+function toolEnded(input, now, privacyMode) {
   const actionInput = input.tool_input;
   const actionOutput = input.tool_response;
-  return baseEvent(input, 'tool.call.ended', now, 'metadata', {
+  return baseEvent(input, 'tool.call.ended', now, privacyLevelFor(privacyMode, 'metadata'), {
     tool_name: input.tool_name ?? 'unknown',
     tool_type: 'codex_tool',
     tool_call_id: input.tool_use_id ?? hash(JSON.stringify(input.tool_input ?? {})),
@@ -138,29 +148,31 @@ function toolEnded(input, now) {
     input_hash: metadataHash(actionInput),
     input_key_count: objectKeyCount(actionInput),
     output_hash: metadataHash(actionOutput),
-    output_key_count: objectKeyCount(actionOutput)
-  });
+    output_key_count: objectKeyCount(actionOutput),
+    ...rawFields(privacyMode, { tool_input: actionInput, tool_response: actionOutput })
+  }, privacyMode);
 }
 
 export function normalizeCodexHook(input, options = {}) {
   const now = options.now ?? new Date().toISOString();
+  const privacyMode = options.privacyMode ?? 'on';
 
   if (input.type === 'agent-turn-complete') {
-    return [sessionEnded(input, now)];
+    return [sessionEnded(input, now, privacyMode)];
   }
 
   switch (input.hook_event_name) {
     case 'SessionStart':
-      return [sessionStarted(input, now)];
+      return [sessionStarted(input, now, privacyMode)];
     case 'SessionEnd':
     case 'Stop':
-      return [sessionEnded(input, now)];
+      return [sessionEnded(input, now, privacyMode)];
     case 'UserPromptSubmit':
-      return [userPromptSubmitted(input, now)];
+      return [userPromptSubmitted(input, now, privacyMode)];
     case 'PreToolUse':
-      return isShellTool(input.tool_name) ? [commandStarted(input, now)] : [toolStarted(input, now)];
+      return isShellTool(input.tool_name) ? [commandStarted(input, now, privacyMode)] : [toolStarted(input, now, privacyMode)];
     case 'PostToolUse':
-      return isShellTool(input.tool_name) ? [commandEnded(input, now)] : [toolEnded(input, now)];
+      return isShellTool(input.tool_name) ? [commandEnded(input, now, privacyMode)] : [toolEnded(input, now, privacyMode)];
     default:
       return [];
   }

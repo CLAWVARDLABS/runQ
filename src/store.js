@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { validateEvent } from './schema.js';
 import { redactEvent } from './redaction.js';
+import { getPrivacyMode } from './config.js';
 
 // Bump this when the on-disk schema changes and existing DBs need a migration.
 // Stored via SQLite's PRAGMA user_version; new DBs are created at SCHEMA_VERSION.
@@ -38,12 +39,18 @@ export class RunqStore {
   #db;
   #redactionPolicy;
 
-  constructor(dbPath, { redactionPolicy = {} } = {}) {
+  constructor(dbPath, options = {}) {
     if (!dbPath) {
       throw new Error('dbPath is required');
     }
 
-    this.#redactionPolicy = redactionPolicy;
+    // If the caller didn't pin an explicit policy, derive it from .runq/config.json
+    // so the user-facing privacy toggle controls write-time redaction end-to-end.
+    if (Object.prototype.hasOwnProperty.call(options, 'redactionPolicy')) {
+      this.#redactionPolicy = options.redactionPolicy || {};
+    } else {
+      this.#redactionPolicy = getPrivacyMode(dbPath) === 'off' ? { disabled: true } : {};
+    }
     mkdirSync(dirname(dbPath), { recursive: true });
     this.#db = new DatabaseSync(dbPath);
     this.#initialize();

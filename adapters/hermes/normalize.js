@@ -5,6 +5,9 @@ import {
   isVerificationCommand,
   metadataHash,
   objectKeyCount,
+  privacyLevelFor,
+  privacyRedactedFor,
+  rawFields,
   textSummary
 } from '../../src/normalize-utils.js';
 
@@ -18,7 +21,7 @@ function runId(input) {
   return input.run_id ?? input.runId ?? sessionId(input);
 }
 
-function baseEvent(input, eventType, now, privacyLevel, payload) {
+function baseEvent(input, eventType, now, privacyLevel, payload, privacyMode) {
   const resolvedSessionId = sessionId(input);
   const resolvedRunId = runId(input);
   return {
@@ -45,7 +48,7 @@ function baseEvent(input, eventType, now, privacyLevel, payload) {
     } : undefined,
     privacy: {
       level: privacyLevel,
-      redacted: true
+      redacted: privacyRedactedFor(privacyMode)
     },
     payload
   };
@@ -81,14 +84,16 @@ function toolSkillName(input) {
 
 export function normalizeHermesEvent(input, options = {}) {
   const now = options.now ?? input.timestamp ?? new Date().toISOString();
+  const privacyMode = options.privacyMode ?? 'on';
   const type = input.type ?? input.event_type;
 
   if (type === 'session.started' || type === 'session_start') {
     return [baseEvent(input, 'session.started', now, 'metadata', {
       agent_name: input.agent ?? input.agent_name ?? 'Hermes',
       model: input.model,
-      session_key_hash: hash(input.session_key ?? input.sessionKey)
-    })];
+      session_key_hash: hash(input.session_key ?? input.sessionKey),
+      ...rawFields(privacyMode, { session_key: input.session_key ?? input.sessionKey, cwd: input.cwd })
+    }, privacyMode)];
   }
 
   if (type === 'session.ended' || type === 'session_end') {
@@ -96,59 +101,64 @@ export function normalizeHermesEvent(input, options = {}) {
       ended_reason: input.success === false || input.error ? 'error' : input.reason ?? 'session_end',
       success: input.success,
       error_hash: input.error ? hash(input.error) : undefined,
-      duration_ms: input.duration_ms ?? input.durationMs
-    })];
+      duration_ms: input.duration_ms ?? input.durationMs,
+      ...rawFields(privacyMode, { error: input.error })
+    }, privacyMode)];
   }
 
   if (type === 'message.user' || type === 'user.prompt') {
     const prompt = input.prompt ?? input.content ?? '';
-    return [baseEvent(input, 'user.prompt.submitted', now, 'summary', {
+    return [baseEvent(input, 'user.prompt.submitted', now, privacyLevelFor(privacyMode, 'summary'), {
       prompt_hash: hash(prompt),
       prompt_summary: textSummary(prompt),
-      prompt_length: String(prompt).length
-    })];
+      prompt_length: String(prompt).length,
+      ...rawFields(privacyMode, { prompt })
+    }, privacyMode)];
   }
 
   if (type === 'model.started' || type === 'llm.started') {
     const prompt = input.prompt ?? '';
-    return [baseEvent(input, 'model.call.started', now, 'summary', {
+    return [baseEvent(input, 'model.call.started', now, privacyLevelFor(privacyMode, 'summary'), {
       provider: input.provider,
       model: input.model,
       prompt_hash: hash(prompt),
       prompt_summary: textSummary(prompt),
-      prompt_length: String(prompt).length
-    })];
+      prompt_length: String(prompt).length,
+      ...rawFields(privacyMode, { prompt })
+    }, privacyMode)];
   }
 
   if (type === 'model.finished' || type === 'llm.finished') {
     const text = input.assistant_text ?? input.output ?? '';
-    return [baseEvent(input, 'model.call.ended', now, 'summary', {
+    return [baseEvent(input, 'model.call.ended', now, privacyLevelFor(privacyMode, 'summary'), {
       provider: input.provider,
       model: input.model,
       assistant_summary: textSummary(text),
       assistant_text_hash: hash(text),
       input_tokens: input.usage?.input ?? input.input_tokens,
       output_tokens: input.usage?.output ?? input.output_tokens,
-      total_tokens: input.usage?.total ?? input.total_tokens
-    })];
+      total_tokens: input.usage?.total ?? input.total_tokens,
+      ...rawFields(privacyMode, { assistant_text: text })
+    }, privacyMode)];
   }
 
   if (type === 'command.started') {
     const command = commandFromInput(input);
-    return [baseEvent(input, 'command.started', now, 'metadata', {
+    return [baseEvent(input, 'command.started', now, privacyLevelFor(privacyMode, 'metadata'), {
       command_id: input.command_id ?? hash(command),
       command_kind: 'shell',
       binary: binaryFromCommand(command),
       args_hash: hash(command),
       cwd_hash: hash(input.cwd),
       is_verification: isVerificationCommand(command),
-      verification_kind: isVerificationCommand(command) ? 'command' : undefined
-    })];
+      verification_kind: isVerificationCommand(command) ? 'command' : undefined,
+      ...rawFields(privacyMode, { command, cwd: input.cwd })
+    }, privacyMode)];
   }
 
   if (type === 'command.finished' || type === 'command.ended') {
     const command = commandFromInput(input);
-    return [baseEvent(input, 'command.ended', now, 'metadata', {
+    return [baseEvent(input, 'command.ended', now, privacyLevelFor(privacyMode, 'metadata'), {
       command_id: input.command_id ?? hash(command),
       command_kind: 'shell',
       binary: binaryFromCommand(command),
@@ -159,27 +169,29 @@ export function normalizeHermesEvent(input, options = {}) {
       stderr_hash: hash(input.stderr ?? input.error),
       duration_ms: input.duration_ms ?? input.durationMs,
       is_verification: isVerificationCommand(command),
-      verification_kind: isVerificationCommand(command) ? 'command' : undefined
-    })];
+      verification_kind: isVerificationCommand(command) ? 'command' : undefined,
+      ...rawFields(privacyMode, { command, cwd: input.cwd, stdout: input.stdout, stderr: input.stderr ?? input.error })
+    }, privacyMode)];
   }
 
   if (type === 'tool.started' || type === 'tool.call.started') {
     const actionInput = toolInput(input);
-    return [baseEvent(input, 'tool.call.started', now, 'metadata', {
+    return [baseEvent(input, 'tool.call.started', now, privacyLevelFor(privacyMode, 'metadata'), {
       tool_name: toolName(input),
       tool_type: input.tool_type ?? input.toolType ?? 'hermes_tool',
       tool_call_id: toolCallId(input),
       mcp_server: toolMcpServer(input),
       skill_name: toolSkillName(input),
       input_hash: metadataHash(actionInput),
-      input_key_count: objectKeyCount(actionInput)
-    })];
+      input_key_count: objectKeyCount(actionInput),
+      ...rawFields(privacyMode, { tool_input: actionInput })
+    }, privacyMode)];
   }
 
   if (type === 'tool.finished' || type === 'tool.ended' || type === 'tool.call.ended') {
     const actionInput = toolInput(input);
     const actionOutput = toolOutput(input);
-    return [baseEvent(input, 'tool.call.ended', now, 'metadata', {
+    return [baseEvent(input, 'tool.call.ended', now, privacyLevelFor(privacyMode, 'metadata'), {
       tool_name: toolName(input),
       tool_type: input.tool_type ?? input.toolType ?? 'hermes_tool',
       tool_call_id: toolCallId(input),
@@ -190,8 +202,9 @@ export function normalizeHermesEvent(input, options = {}) {
       input_hash: metadataHash(actionInput),
       input_key_count: objectKeyCount(actionInput),
       output_hash: metadataHash(actionOutput),
-      output_key_count: objectKeyCount(actionOutput)
-    })];
+      output_key_count: objectKeyCount(actionOutput),
+      ...rawFields(privacyMode, { tool_input: actionInput, tool_response: actionOutput })
+    }, privacyMode)];
   }
 
   return [];

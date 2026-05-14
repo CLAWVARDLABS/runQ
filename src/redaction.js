@@ -78,6 +78,9 @@ function hasSensitivePrivacy(event) {
 }
 
 export function redactEvent(event, policy = {}) {
+  if (policy && policy.disabled === true) {
+    return event;
+  }
   const payload = redactValue('payload', event.payload || {}, policy);
   const redacted = hasSensitivePrivacy(event) || JSON.stringify(payload) !== JSON.stringify(event.payload || {});
   if (!redacted) {
