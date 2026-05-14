@@ -320,7 +320,14 @@ const traceGroups = [
 
 function normalizeLang(lang) { return lang === 'en' ? 'en' : 'zh'; }
 function getStoredLang() { if (typeof window === 'undefined') return null; return window.localStorage.getItem('runq.lang'); }
-function setStoredLang(lang) { if (typeof window !== 'undefined') window.localStorage.setItem('runq.lang', lang); }
+function setStoredLang(lang) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem('runq.lang', lang);
+  if (typeof document !== 'undefined') {
+    const oneYear = 60 * 60 * 24 * 365;
+    document.cookie = `runq.lang=${lang}; path=/; max-age=${oneYear}; samesite=lax`;
+  }
+}
 function getStoredPrivacyMode() {
   if (typeof window === 'undefined') return 'off';
   return window.localStorage.getItem('runq.privacyMode') === 'on' ? 'on' : 'off';

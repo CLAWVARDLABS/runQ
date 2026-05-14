@@ -218,6 +218,8 @@ const copy = {
     onboardingSummaryPartial: '部分 Agent 接入完成',
     onboardingClose: '查看 Agent 总览',
     rerunAll: '重新体检全部',
+    clearFilter: '清除筛选',
+    advisorBodyFiltered: '当前只显示选中 Agent 的数据,点击徽章清除筛选。',
     filterSort: '筛选排序',
     descClaudeCode: '本地 Claude Code 终端编码',
     descCodex: 'Codex 命令行编码代理',
@@ -473,6 +475,8 @@ const copy = {
     onboardingSummaryPartial: 'Some Agents finished',
     onboardingClose: 'View Agent overview',
     rerunAll: 'Re-run all check-ups',
+    clearFilter: 'Clear filter',
+    advisorBodyFiltered: 'Currently showing data for the selected Agent only. Click the chip to clear.',
     filterSort: 'Filter & Sort',
     descClaudeCode: 'Claude Code terminal coding agent',
     descCodex: 'OpenAI Codex code automation',
@@ -544,7 +548,16 @@ const sidebarItems = [
 
 function normalizeLang(lang) { return lang === 'en' ? 'en' : 'zh'; }
 function getStoredLang() { if (typeof window === 'undefined') return null; return window.localStorage.getItem('runq.lang'); }
-function setStoredLang(lang) { if (typeof window !== 'undefined') window.localStorage.setItem('runq.lang', lang); }
+function setStoredLang(lang) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem('runq.lang', lang);
+  // Also persist as a cookie so SSR can match the user's choice on the next
+  // navigation and avoid the zh→en hydration flash.
+  if (typeof document !== 'undefined') {
+    const oneYear = 60 * 60 * 24 * 365;
+    document.cookie = `runq.lang=${lang}; path=/; max-age=${oneYear}; samesite=lax`;
+  }
+}
 function getStoredPrivacyMode() {
   if (typeof window === 'undefined') return 'off';
   return window.localStorage.getItem('runq.privacyMode') === 'on' ? 'on' : 'off';
@@ -1129,15 +1142,38 @@ function AgentCardActions({ agent, onOpenSetupWizard, t }) {
   ]);
 }
 
-function AgentCard({ agent, t, accent, description, onOpenSetupWizard }) {
+function AgentCard({ agent, t, accent, description, onOpenSetupWizard, selected = false, onSelect }) {
   const stats = agent.stats;
   const failureRate = stats.total ? stats.failed / stats.total : 0;
   const confidencePct = Math.round(stats.avgConfidence * 100);
+  const clickable = typeof onSelect === 'function' && agent.connected;
   return h('div', {
+    'aria-pressed': clickable ? (selected ? 'true' : 'false') : undefined,
+    'data-agent-card-selected': selected ? 'true' : 'false',
+    'data-agent-card-clickable': clickable ? 'true' : 'false',
     className: [
-      'glass-card p-6 rounded-3xl flex flex-col gap-6 group hover:translate-y-[-4px] transition-all duration-300',
-      accent ? 'shimmer-border' : ''
-    ].filter(Boolean).join(' ')
+      'glass-card p-6 rounded-3xl flex flex-col gap-6 group transition-all duration-300',
+      clickable ? 'cursor-pointer hover:translate-y-[-4px]' : 'hover:translate-y-[-4px]',
+      accent ? 'shimmer-border' : '',
+      selected ? 'ring-2 ring-primary/40 shadow-lg shadow-primary/10' : ''
+    ].filter(Boolean).join(' '),
+    onClick: clickable
+      ? (event) => {
+          // Don't toggle when the user clicks an inner control (links / buttons).
+          if (event.target.closest('a, button')) return;
+          onSelect(agent.agent_id);
+        }
+      : undefined,
+    role: clickable ? 'button' : undefined,
+    tabIndex: clickable ? 0 : undefined,
+    onKeyDown: clickable
+      ? (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onSelect(agent.agent_id);
+          }
+        }
+      : undefined
   }, [
     h('div', { className: 'flex justify-between items-start' }, [
       h('div', { className: `w-12 h-12 rounded-2xl bg-gradient-to-br ${agent.gradient} flex items-center justify-center text-white` },
@@ -1476,7 +1512,7 @@ function CheckupGuide({ agent, onOpenSetupWizard, t }) {
   ]);
 }
 
-function AgentFleet({ agents, onOpenSetupWizard, t }) {
+function AgentFleet({ agents, onOpenSetupWizard, t, selectedAgentId = null, onSelectAgent }) {
   const descriptions = {
     claude_code: t.descClaudeCode,
     codex: t.descCodex,
@@ -1515,6 +1551,8 @@ function AgentFleet({ agents, onOpenSetupWizard, t }) {
         description: descriptions[agent.agent_id] || agent.brand,
         key: agent.agent_id,
         onOpenSetupWizard,
+        onSelect: onSelectAgent,
+        selected: selectedAgentId === agent.agent_id,
         t
       })),
       h(AddAgentCard, { key: 'add', onOpen: onOpenSetupWizard, t })
@@ -1567,16 +1605,25 @@ function smoothBezier(points) {
   return cmds.join(' ');
 }
 
-function PerformanceTrend({ chartPoints, stats, t, sessions }) {
+function PerformanceTrend({ chartPoints, stats, t, sessions, filteredAgentId, filteredAgentLabel, onClearFilter }) {
   const [range, setRange] = useState('7d');
   const rangedPoints = useMemo(
     () => sessions ? groupRunsForChart(sessions, range) : chartPoints,
     [sessions, range, chartPoints]
   );
-  return PerformanceTrendChart({ chartPoints: rangedPoints, stats, t, range, onRangeChange: setRange });
+  return PerformanceTrendChart({
+    chartPoints: rangedPoints,
+    filteredAgentId,
+    filteredAgentLabel,
+    onClearFilter,
+    onRangeChange: setRange,
+    range,
+    stats,
+    t
+  });
 }
 
-function PerformanceTrendChart({ chartPoints, stats, t, range, onRangeChange }) {
+function PerformanceTrendChart({ chartPoints, stats, t, range, onRangeChange, filteredAgentId, filteredAgentLabel, onClearFilter }) {
   const width = 800; const height = 240;
   const max = Math.max(1, ...chartPoints.map((p) => p.input + p.output));
   const totalTokens = chartPoints.reduce((sum, p) => sum + p.input + p.output, 0);
@@ -1595,8 +1642,24 @@ function PerformanceTrendChart({ chartPoints, stats, t, range, onRangeChange }) 
   return h('div', { className: 'lg:col-span-2 glass-card rounded-3xl p-8 space-y-8' }, [
     h('div', { className: 'flex justify-between items-start' }, [
       h('div', null, [
-        h('h3', { className: 'font-h3 text-xl' }, t.tokenConsumption),
-        h('p', { className: 'text-slate-500 text-sm' }, t.advisorBody)
+        h('h3', { className: 'font-h3 text-xl flex items-center gap-2' }, [
+          h('span', { key: 'title' }, t.tokenConsumption),
+          filteredAgentId
+            ? h('button', {
+                className: 'inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary hover:bg-primary/15',
+                key: 'agent-filter',
+                onClick: onClearFilter,
+                title: t.clearFilter,
+                type: 'button'
+              }, [
+                h('span', { key: 'l' }, filteredAgentLabel),
+                h(MaterialIcon, { className: 'text-[14px]', key: 'x', name: 'close' })
+              ])
+            : null
+        ]),
+        h('p', { className: 'text-slate-500 text-sm' },
+          filteredAgentId ? t.advisorBodyFiltered : t.advisorBody
+        )
       ]),
       h('div', { className: 'flex gap-2', role: 'tablist', 'aria-label': t.tokenConsumption }, [
         h('button', {
@@ -3048,6 +3111,8 @@ export function RunInboxApp({ initialSessions = [], initialEvents = [], setupHea
   const [setupWizardOpen, setSetupWizardOpen] = useState(false);
   const [privacyMode, setPrivacyModeState] = useState('off');
   const [onboardingModal, setOnboardingModal] = useState({ open: false, agents: [] });
+  const [chartAgentId, setChartAgentId] = useState(null);
+  const toggleChartAgent = (agentId) => setChartAgentId((prev) => prev === agentId ? null : agentId);
 
   useEffect(() => {
     const stored = getStoredLang();
@@ -3239,10 +3304,26 @@ export function RunInboxApp({ initialSessions = [], initialEvents = [], setupHea
       sessions.length === 0 && connectedAgentCount > 0
         ? h(DataSourceEmptyState, { dataSources, dbPath, key: 'empty-source', t })
         : null,
-      h(AgentFleet, { agents, key: 'fleet', onOpenSetupWizard: openSetupWizard, t }),
+      h(AgentFleet, {
+        agents,
+        key: 'fleet',
+        onOpenSetupWizard: openSetupWizard,
+        onSelectAgent: toggleChartAgent,
+        selectedAgentId: chartAgentId,
+        t
+      }),
       h('p', { className: 'sr-only', key: 'product-modules' }, t.productSections),
       h('div', { className: 'grid grid-cols-1 lg:grid-cols-3 gap-gutter', key: 'mid' }, [
-        h(PerformanceTrend, { chartPoints, key: 'perf', sessions, stats, t }),
+        h(PerformanceTrend, {
+          chartPoints,
+          filteredAgentId: chartAgentId,
+          filteredAgentLabel: chartAgentId ? (agents.find((a) => a.agent_id === chartAgentId)?.display_name ?? chartAgentId) : null,
+          key: 'perf',
+          onClearFilter: () => setChartAgentId(null),
+          sessions: chartAgentId ? sessions.filter((s) => s.framework === chartAgentId) : sessions,
+          stats,
+          t
+        }),
         h(AdvisorPanel, { key: 'advisor', recommendations: allRecs, t })
       ])
     ],
