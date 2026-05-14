@@ -205,6 +205,19 @@ const copy = {
     last24h: '近 24 小时',
     last7d: '近 7 天',
     deployNew: '接入 Agent',
+    onboardingEyebrow: '一键开始',
+    onboardingTitle: '让 RunQ 自动接入你本机的所有 Agent',
+    onboardingBody: 'RunQ 会扫描 ~/.claude / ~/.codex / ~/.openclaw / ~/.hermes,自动给已安装的 Agent 装好 hook 并导入历史会话。完成后新 session 会实时入库,你立刻就能看到完整的观测报告。',
+    onboardingStart: '一键启动 RunQ',
+    onboardingDetecting: '检测本机 Agent…',
+    onboardingDetectedZero: '本机没有检测到任何受支持的 Agent。请先在你的电脑上安装 Claude Code / Codex / OpenClaw / Hermes 任一个。',
+    onboardingProgressTitle: '正在接入 Agent',
+    onboardingAgentDone: '已接入',
+    onboardingAgentFailed: '接入失败',
+    onboardingSummaryGood: '全部 Agent 已接入并导入历史',
+    onboardingSummaryPartial: '部分 Agent 接入完成',
+    onboardingClose: '查看 Agent 总览',
+    rerunAll: '重新体检全部',
     filterSort: '筛选排序',
     descClaudeCode: '本地 Claude Code 终端编码',
     descCodex: 'Codex 命令行编码代理',
@@ -447,6 +460,19 @@ const copy = {
     last24h: 'Last 24h',
     last7d: 'Last 7d',
     deployNew: 'Connect Agent',
+    onboardingEyebrow: 'One-click start',
+    onboardingTitle: 'Let RunQ auto-onboard every Agent on this machine',
+    onboardingBody: 'RunQ scans ~/.claude / ~/.codex / ~/.openclaw / ~/.hermes, installs hooks for any installed Agent, and backfills their historical sessions. New sessions stream in live afterwards, so you see a full observation report immediately.',
+    onboardingStart: 'Onboard everything',
+    onboardingDetecting: 'Detecting local Agents…',
+    onboardingDetectedZero: 'No supported Agent found locally. Install Claude Code / Codex / OpenClaw / Hermes first, then come back.',
+    onboardingProgressTitle: 'Onboarding Agents',
+    onboardingAgentDone: 'Connected',
+    onboardingAgentFailed: 'Failed',
+    onboardingSummaryGood: 'All Agents connected and history imported',
+    onboardingSummaryPartial: 'Some Agents finished',
+    onboardingClose: 'View Agent overview',
+    rerunAll: 'Re-run all check-ups',
     filterSort: 'Filter & Sort',
     descClaudeCode: 'Claude Code terminal coding agent',
     descCodex: 'OpenAI Codex code automation',
@@ -555,24 +581,10 @@ function RunqLogo({ className = 'h-10 w-10' }) {
     'data-logo': 'runq',
     viewBox: '0 0 128 128'
   }, [
-    h('defs', null, [
-      h('linearGradient', { id: 'runq-mark-bg', gradientUnits: 'userSpaceOnUse', x1: '16', x2: '116', y1: '12', y2: '118' }, [
-        h('stop', { stopColor: '#111827' }),
-        h('stop', { offset: '1', stopColor: '#0050CB' })
-      ]),
-      h('linearGradient', { id: 'runq-mark-orbit', gradientUnits: 'userSpaceOnUse', x1: '26', x2: '102', y1: '30', y2: '100' }, [
-        h('stop', { stopColor: '#00EEFC' }),
-        h('stop', { offset: '1', stopColor: '#0066FF' })
-      ])
-    ]),
-    h('rect', { fill: 'url(#runq-mark-bg)', height: '128', rx: '28', width: '128' }),
-    h('path', { d: 'M30 66c0-21.5 15.7-38 37-38 17.6 0 30.8 11.4 34.4 27.7', fill: 'none', stroke: 'url(#runq-mark-orbit)', strokeLinecap: 'round', strokeWidth: '10' }),
-    h('path', { d: 'M98 65c0 21.5-15.7 38-37 38-18 0-31.5-11.9-34.7-28.7', fill: 'none', stroke: '#F8FAFC', strokeLinecap: 'round', strokeWidth: '10' }),
-    h('path', { d: 'M75 87l18 18', stroke: '#F8FAFC', strokeLinecap: 'round', strokeWidth: '10' }),
-    h('circle', { cx: '67', cy: '66', fill: '#F8FAFC', r: '16' }),
-    h('circle', { cx: '67', cy: '66', fill: '#0050CB', r: '7' }),
-    h('circle', { cx: '101', cy: '54', fill: '#22C55E', r: '8' }),
-    h('path', { d: 'M97.5 54.2l2.4 2.5 5.1-6', fill: 'none', stroke: '#F8FAFC', strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: '2.8' })
+    h('rect', { fill: '#050505', height: '128', rx: '28', width: '128' }),
+    h('circle', { cx: '62', cy: '62', fill: 'none', r: '38', stroke: '#FFFFFF', strokeLinecap: 'round', strokeWidth: '8' }),
+    h('circle', { cx: '62', cy: '62', fill: 'none', r: '20', stroke: '#FFFFFF', strokeLinecap: 'round', strokeWidth: '8' }),
+    h('path', { d: 'M76 76L102 102', fill: 'none', stroke: '#FFFFFF', strokeLinecap: 'round', strokeWidth: '8' })
   ]);
 }
 
@@ -1170,6 +1182,203 @@ function AgentCard({ agent, t, accent, description, onOpenSetupWizard }) {
             }
           }, t.needsSetup)
         ])
+  ]);
+}
+
+function OnboardingHero({ dbPath, onStarted, t }) {
+  const [detecting, setDetecting] = useState(true);
+  const [detected, setDetected] = useState([]);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const params = new URLSearchParams();
+        if (dbPath) params.set('db', dbPath);
+        const res = await fetch(`/api/onboarding/auto${params.toString() ? `?${params}` : ''}`);
+        const data = await res.json();
+        if (cancelled) return;
+        setDetected(Array.isArray(data?.detected) ? data.detected : []);
+      } catch (err) {
+        if (!cancelled) setError(err?.message || 'detect failed');
+      } finally {
+        if (!cancelled) setDetecting(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [dbPath]);
+
+  return h('section', {
+    className: 'glass-card-strong relative overflow-hidden rounded-3xl border border-primary/20 p-xl shadow-lg shadow-primary/5',
+    'data-onboarding-hero': 'true'
+  }, [
+    h('div', { className: 'pointer-events-none absolute -right-20 -top-16 h-72 w-72 rounded-full bg-gradient-to-br from-primary/20 via-primary/5 to-transparent blur-3xl' }),
+    h('div', { className: 'relative flex flex-col gap-md md:flex-row md:items-center md:justify-between' }, [
+      h('div', { className: 'max-w-2xl' }, [
+        h('div', { className: 'mb-2 flex items-center gap-2 text-primary' }, [
+          h(MaterialIcon, { className: 'text-[20px]', name: 'auto_awesome' }),
+          h('span', { className: 'font-label-caps text-label-caps uppercase' }, t.onboardingEyebrow)
+        ]),
+        h('h2', { className: 'text-h2 font-h2 tracking-tight text-on-surface' }, t.onboardingTitle),
+        h('p', { className: 'mt-3 text-sm leading-6 text-on-surface-variant' }, t.onboardingBody),
+        h('div', { className: 'mt-md flex flex-wrap items-center gap-2 text-xs text-outline' },
+          detecting
+            ? [h('span', { key: 'd' }, t.onboardingDetecting)]
+            : detected.length > 0
+              ? detected.map((id) => chip(agentMeta(id)[1], 'info', `det-${id}`))
+              : [chip(t.onboardingDetectedZero, 'warn', 'none')]
+        )
+      ]),
+      h('div', { className: 'flex shrink-0 flex-col gap-2' }, [
+        h('button', {
+          'data-action': 'start-onboarding',
+          className: 'inline-flex items-center justify-center gap-2 rounded-2xl bg-primary px-6 py-3 text-base font-semibold text-on-primary shadow-lg shadow-primary/20 transition hover:opacity-90 disabled:opacity-40',
+          disabled: detecting || detected.length === 0,
+          onClick: () => onStarted?.(detected),
+          type: 'button'
+        }, [
+          h(MaterialIcon, { className: 'text-[20px]', key: 'i', name: 'rocket_launch' }),
+          h('span', { key: 'l' }, t.onboardingStart)
+        ]),
+        error ? h('span', { className: 'text-xs text-error' }, error) : null
+      ])
+    ])
+  ]);
+}
+
+function OnboardingProgressModal({ open, agents, onClose, t }) {
+  const [results, setResults] = useState({});
+  const [currentAgent, setCurrentAgent] = useState(null);
+  const [finished, setFinished] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => { if (!open) { setResults({}); setCurrentAgent(null); setFinished(false); setError(null); } }, [open]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/onboarding/auto', { method: 'POST' });
+        if (!res.ok || !res.body) {
+          setError(await res.text());
+          setFinished(true);
+          return;
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (cancelled) break;
+          buf += decoder.decode(value, { stream: true });
+          let n;
+          while ((n = buf.indexOf('\n')) !== -1) {
+            const line = buf.slice(0, n).trim();
+            buf = buf.slice(n + 1);
+            if (!line) continue;
+            let evt;
+            try { evt = JSON.parse(line); } catch { continue; }
+            if (evt.type === 'agent-start') {
+              setCurrentAgent(evt.agent_id);
+              setResults((prev) => ({ ...prev, [evt.agent_id]: { ...(prev[evt.agent_id] || {}), state: 'running' } }));
+            } else if (evt.type === 'progress') {
+              setResults((prev) => ({
+                ...prev,
+                [evt.agent_id]: {
+                  ...(prev[evt.agent_id] || {}),
+                  state: 'running',
+                  phase: evt.phase,
+                  current: evt.current,
+                  total: evt.total,
+                  imported_sessions: evt.imported_sessions ?? prev[evt.agent_id]?.imported_sessions ?? 0,
+                  imported_events: evt.imported_events ?? prev[evt.agent_id]?.imported_events ?? 0
+                }
+              }));
+            } else if (evt.type === 'agent-done') {
+              setResults((prev) => ({ ...prev, [evt.agent_id]: { state: 'done', result: evt.result } }));
+            } else if (evt.type === 'agent-error') {
+              setResults((prev) => ({ ...prev, [evt.agent_id]: { state: 'error', message: evt.message } }));
+            } else if (evt.type === 'done') {
+              setFinished(true);
+            }
+          }
+        }
+      } catch (err) {
+        setError(err?.message || 'stream failed');
+        setFinished(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open]);
+
+  if (!open) return null;
+
+  const succeededCount = Object.values(results).filter((r) => r.state === 'done').length;
+  const summary = finished
+    ? (succeededCount === agents.length ? t.onboardingSummaryGood : t.onboardingSummaryPartial)
+    : null;
+
+  return h('div', { className: 'fixed inset-0 z-50 flex items-center justify-center p-4', role: 'dialog', 'aria-modal': 'true', 'data-onboarding-modal': 'open' }, [
+    h('button', {
+      'aria-label': t.checkupCancel,
+      className: 'absolute inset-0 h-full w-full bg-slate-950/50 backdrop-blur-sm',
+      onClick: finished ? onClose : () => {},
+      tabIndex: -1,
+      type: 'button'
+    }),
+    h('div', { className: 'relative w-full max-w-2xl rounded-3xl bg-surface p-lg shadow-2xl' }, [
+      h('div', { className: 'mb-md flex items-start justify-between gap-3' }, [
+        h('div', null, [
+          h('p', { className: 'text-label-caps font-label-caps uppercase text-outline' }, t.onboardingEyebrow),
+          h('h3', { className: 'mt-1 text-h3 font-h3 tracking-tight' }, t.onboardingProgressTitle)
+        ]),
+        h(MaterialIcon, {
+          className: `text-[24px] ${finished ? 'text-green-500' : 'text-primary animate-spin'}`,
+          name: finished ? 'check_circle' : 'sync'
+        })
+      ]),
+      h('ul', { className: 'space-y-2' }, agents.map((id) => {
+        const r = results[id] || {};
+        const meta = agentMeta(id);
+        const tone = r.state === 'done' ? 'good' : r.state === 'error' ? 'bad' : r.state === 'running' ? 'info' : 'neutral';
+        const stateText = r.state === 'done'
+          ? `${t.onboardingAgentDone}${r.result?.imported_events ? ` · +${r.result.imported_events} 事件 / ${r.result.imported_sessions || 0} 会话` : ''}`
+          : r.state === 'error'
+            ? `${t.onboardingAgentFailed}: ${r.message || ''}`
+            : r.state === 'running'
+              ? `${r.phase || '...'}${r.total ? ` · ${r.current || 0}/${r.total}` : ''}`
+              : '—';
+        return h('li', {
+          className: 'flex items-center justify-between gap-3 rounded-2xl border border-outline-variant/30 bg-white/60 p-3',
+          'data-onboarding-row': id,
+          key: id
+        }, [
+          h('div', { className: 'flex items-center gap-3' }, [
+            h('div', { className: `grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br ${meta[4]} text-white` },
+              h(AgentLogo, { className: 'h-4 w-4 text-white', logo: meta[3] })
+            ),
+            h('span', { className: 'text-sm font-semibold text-on-surface' }, meta[1])
+          ]),
+          chip(stateText, tone, 'state')
+        ]);
+      })),
+      error ? h('p', { className: 'mt-3 rounded-xl bg-error-container/30 p-3 text-sm text-error' }, error) : null,
+      summary ? h('p', { className: 'mt-3 rounded-xl bg-surface-container-low/60 p-3 text-sm text-on-surface' }, summary) : null,
+      h('div', { className: 'mt-md flex justify-end' }, [
+        h('button', {
+          'data-action': 'close-onboarding',
+          className: finished
+            ? 'rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-on-primary hover:opacity-90'
+            : 'rounded-xl border border-outline-variant/40 bg-white px-4 py-2 text-sm text-outline',
+          disabled: !finished,
+          onClick: onClose,
+          type: 'button'
+        }, finished ? t.onboardingClose : '…')
+      ])
+    ])
   ]);
 }
 
@@ -2786,6 +2995,7 @@ export function RunInboxApp({ initialSessions = [], initialEvents = [], setupHea
   const [selectedSetupAgentId, setSelectedSetupAgentId] = useState(initialAgentId ?? 'codex');
   const [setupWizardOpen, setSetupWizardOpen] = useState(false);
   const [privacyMode, setPrivacyModeState] = useState('off');
+  const [onboardingModal, setOnboardingModal] = useState({ open: false, agents: [] });
 
   useEffect(() => {
     const stored = getStoredLang();
@@ -2959,9 +3169,24 @@ export function RunInboxApp({ initialSessions = [], initialEvents = [], setupHea
     docs: t.navDocs
   };
 
+  const startOnboarding = (detectedAgentIds) => {
+    if (!detectedAgentIds || detectedAgentIds.length === 0) return;
+    setOnboardingModal({ open: true, agents: detectedAgentIds });
+  };
+  const closeOnboarding = () => {
+    setOnboardingModal({ open: false, agents: [] });
+    if (typeof window !== 'undefined') window.location.reload();
+  };
+  const connectedAgentCount = agents.filter((a) => a.connected).length;
+
   const viewContent = {
     agents: [
-      sessions.length === 0 ? h(DataSourceEmptyState, { dataSources, dbPath, key: 'empty-source', t }) : null,
+      connectedAgentCount === 0
+        ? h(OnboardingHero, { dbPath, key: 'onboarding', onStarted: startOnboarding, t })
+        : null,
+      sessions.length === 0 && connectedAgentCount > 0
+        ? h(DataSourceEmptyState, { dataSources, dbPath, key: 'empty-source', t })
+        : null,
       h(AgentFleet, { agents, key: 'fleet', onOpenSetupWizard: openSetupWizard, t }),
       h('p', { className: 'sr-only', key: 'product-modules' }, t.productSections),
       h('div', { className: 'grid grid-cols-1 lg:grid-cols-3 gap-gutter', key: 'mid' }, [
@@ -3038,6 +3263,13 @@ export function RunInboxApp({ initialSessions = [], initialEvents = [], setupHea
       h('div', { className: 'mx-auto max-w-[1400px] space-y-8', key: 'container' }, viewContent)
     ]),
     setupWizardOverlay,
+    h(OnboardingProgressModal, {
+      agents: onboardingModal.agents,
+      key: 'onboarding-modal',
+      onClose: closeOnboarding,
+      open: onboardingModal.open,
+      t
+    }),
     h(FloatingHelp, { key: 'fab', t })
   ]);
 }
