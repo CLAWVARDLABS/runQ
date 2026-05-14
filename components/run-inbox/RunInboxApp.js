@@ -209,6 +209,22 @@ const copy = {
     checkupResultEventsSuffix: '条新事件,跨',
     checkupResultSessionsSuffix: '个会话',
     checkupHooksInstalledSuffix: ' · 实时 hook 已就绪',
+    checkupModalTitle: '正在体检',
+    checkupPhaseStarting: '准备中',
+    checkupPhaseDetect: '检测安装状态',
+    checkupPhaseInstallHooks: '写入 RunQ hooks',
+    checkupPhaseHooksInstalled: 'Hook 已就位',
+    checkupPhaseListFiles: '扫描本地历史',
+    checkupPhaseFilesListed: '历史文件已列出',
+    checkupPhaseReadingHermes: '读取 Hermes state.db',
+    checkupPhaseImport: '导入会话',
+    checkupPhaseDone: '完成 🎉',
+    checkupCloseModal: '查看完整报告',
+    checkupCancel: '关闭',
+    checkupStat_files: '历史文件',
+    checkupStat_sessions: '已导入会话',
+    checkupStat_events: '已导入事件',
+    checkupStat_elapsed: '用时',
     checkupEmpty: '未发现本地历史会话',
     checkupAbsent: 'Agent 未在本机安装',
     checkupError: '体检失败',
@@ -424,6 +440,22 @@ const copy = {
     checkupResultEventsSuffix: ' new event(s) across',
     checkupResultSessionsSuffix: 'session(s)',
     checkupHooksInstalledSuffix: ' · live hook ready',
+    checkupModalTitle: 'Running check-up',
+    checkupPhaseStarting: 'Preparing',
+    checkupPhaseDetect: 'Detecting install',
+    checkupPhaseInstallHooks: 'Installing RunQ hooks',
+    checkupPhaseHooksInstalled: 'Hooks ready',
+    checkupPhaseListFiles: 'Scanning local history',
+    checkupPhaseFilesListed: 'History files listed',
+    checkupPhaseReadingHermes: 'Reading Hermes state.db',
+    checkupPhaseImport: 'Importing sessions',
+    checkupPhaseDone: 'Done 🎉',
+    checkupCloseModal: 'View full report',
+    checkupCancel: 'Close',
+    checkupStat_files: 'Files',
+    checkupStat_sessions: 'Sessions imported',
+    checkupStat_events: 'Events imported',
+    checkupStat_elapsed: 'Elapsed',
     checkupEmpty: 'No historical sessions found locally',
     checkupAbsent: 'Agent is not installed on this machine',
     checkupError: 'Check-up failed',
@@ -2201,32 +2233,223 @@ function formatTokenCount(value) {
   return String(n);
 }
 
+function phaseLabel(phase, t) {
+  return {
+    starting: t.checkupPhaseStarting,
+    detect: t.checkupPhaseDetect,
+    'install-hooks': t.checkupPhaseInstallHooks,
+    'hooks-installed': t.checkupPhaseHooksInstalled,
+    'list-files': t.checkupPhaseListFiles,
+    'files-listed': t.checkupPhaseFilesListed,
+    'reading-hermes-db': t.checkupPhaseReadingHermes,
+    import: t.checkupPhaseImport,
+    done: t.checkupPhaseDone
+  }[phase] ?? phase;
+}
+
+function CheckupProgressModal({ state, onClose, agentName, t }) {
+  if (!state.open) return null;
+  const { phase, current, total, files, sessions, events, elapsedMs, result, error, hooksInstalled, lastFile } = state;
+  const percent = total > 0 && phase === 'import' ? Math.min(100, Math.round((current / total) * 100)) : (result ? 100 : (phase === 'done' ? 100 : 8));
+  const phases = ['detect', 'install-hooks', 'list-files', 'import', 'done'];
+  const currentIdx = (() => {
+    if (result) return phases.length - 1;
+    if (['files-listed', 'reading-hermes-db'].includes(phase)) return phases.indexOf('list-files');
+    if (phase === 'hooks-installed') return phases.indexOf('install-hooks');
+    return Math.max(0, phases.indexOf(phase));
+  })();
+  const closeButtonLabel = result ? t.checkupCloseModal : t.checkupCancel;
+  return h('div', {
+    className: 'fixed inset-0 z-50 flex items-center justify-center p-4',
+    'data-checkup-modal': 'open',
+    role: 'dialog',
+    'aria-modal': 'true',
+    'aria-labelledby': 'checkup-modal-title'
+  }, [
+    h('button', {
+      'aria-label': 'Close',
+      className: 'absolute inset-0 h-full w-full bg-slate-950/40 backdrop-blur-sm',
+      onClick: onClose,
+      tabIndex: -1,
+      type: 'button'
+    }),
+    h('div', { className: 'relative w-full max-w-xl rounded-3xl bg-surface p-lg shadow-2xl' }, [
+      h('div', { className: 'flex items-start justify-between gap-3 mb-md' }, [
+        h('div', null, [
+          h('p', { className: 'text-label-caps font-label-caps uppercase text-outline' }, t.checkupModalTitle),
+          h('h3', { id: 'checkup-modal-title', className: 'mt-1 text-h3 font-h3 tracking-tight' }, agentName)
+        ]),
+        h(MaterialIcon, {
+          className: `text-[24px] ${result ? 'text-green-500' : error ? 'text-error' : 'text-primary animate-spin'}`,
+          name: result ? 'check_circle' : (error ? 'error' : 'sync')
+        })
+      ]),
+      h('ol', { className: 'mb-md grid grid-cols-5 gap-1' }, phases.map((p, idx) => h('li', {
+        className: `h-1.5 rounded-full ${idx <= currentIdx ? 'bg-primary' : 'bg-surface-container-low'} ${idx === currentIdx && !result ? 'animate-pulse' : ''}`,
+        key: p
+      }))),
+      h('p', {
+        className: 'mb-md text-sm font-semibold text-on-surface',
+        'data-checkup-phase': phase
+      }, phaseLabel(phase, t)),
+      total > 0 && phase === 'import' ? h('div', { className: 'mb-md' }, [
+        h('div', { className: 'mb-1 flex justify-between text-xs text-outline' }, [
+          h('span', null, lastFile ? lastFile.split('/').slice(-2).join('/') : ''),
+          h('span', { className: 'font-mono' }, `${current}/${total}`)
+        ]),
+        h('div', { className: 'h-2 overflow-hidden rounded-full bg-surface-container-low' },
+          h('div', {
+            className: 'h-full rounded-full bg-primary transition-all duration-200',
+            style: { width: `${percent}%` }
+          })
+        )
+      ]) : null,
+      h('div', { className: 'mb-md grid grid-cols-4 gap-2 text-center' }, [
+        h('div', { className: 'rounded-xl bg-surface-container-low/50 p-2', key: 'f' }, [
+          h('p', { className: 'text-[10px] uppercase tracking-wider text-outline' }, t.checkupStat_files),
+          h('p', { className: 'font-mono text-lg font-bold text-on-surface', 'data-checkup-files': true }, String(files ?? '—'))
+        ]),
+        h('div', { className: 'rounded-xl bg-surface-container-low/50 p-2', key: 's' }, [
+          h('p', { className: 'text-[10px] uppercase tracking-wider text-outline' }, t.checkupStat_sessions),
+          h('p', { className: 'font-mono text-lg font-bold text-on-surface', 'data-checkup-sessions': true }, String(sessions ?? 0))
+        ]),
+        h('div', { className: 'rounded-xl bg-surface-container-low/50 p-2', key: 'e' }, [
+          h('p', { className: 'text-[10px] uppercase tracking-wider text-outline' }, t.checkupStat_events),
+          h('p', { className: 'font-mono text-lg font-bold text-on-surface', 'data-checkup-events': true }, String(events ?? 0))
+        ]),
+        h('div', { className: 'rounded-xl bg-surface-container-low/50 p-2', key: 'el' }, [
+          h('p', { className: 'text-[10px] uppercase tracking-wider text-outline' }, t.checkupStat_elapsed),
+          h('p', { className: 'font-mono text-lg font-bold text-on-surface' }, `${(elapsedMs / 1000).toFixed(1)}s`)
+        ])
+      ]),
+      hooksInstalled && !result ? chip(t.checkupPhaseHooksInstalled, 'info', 'hooks-ready') : null,
+      error ? h('p', { className: 'mt-2 rounded-xl bg-error-container/40 p-3 text-sm text-error' }, error) : null,
+      result?.message ? h('p', { className: 'mt-2 rounded-xl bg-surface-container-low/50 p-3 text-sm text-on-surface-variant' }, result.message) : null,
+      h('div', { className: 'mt-md flex justify-end gap-2' }, [
+        h('button', {
+          className: result
+            ? 'rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-on-primary hover:opacity-90'
+            : 'rounded-xl border border-outline-variant/40 bg-white px-4 py-2 text-sm text-on-surface hover:border-primary/40',
+          'data-action': result ? 'close-checkup-modal-success' : 'close-checkup-modal-cancel',
+          onClick: onClose,
+          type: 'button'
+        }, closeButtonLabel)
+      ])
+    ])
+  ]);
+}
+
+function initialCheckupState() {
+  return {
+    open: false,
+    phase: 'starting',
+    current: 0,
+    total: 0,
+    files: 0,
+    sessions: 0,
+    events: 0,
+    elapsedMs: 0,
+    lastFile: null,
+    hooksInstalled: false,
+    result: null,
+    error: null,
+    startedAt: 0
+  };
+}
+
 function HealthReportPage({ agentId, dbPath, initialReport, t, lang }) {
   const [report, setReport] = useState(initialReport);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  const [modalState, setModalState] = useState(initialCheckupState);
   const displayName = report?.display_name || agentMeta(agentId)[1];
+
+  const closeModal = () => {
+    const wasSuccess = Boolean(modalState.result);
+    setModalState((prev) => ({ ...prev, open: false }));
+    if (wasSuccess && typeof window !== 'undefined') {
+      window.location.reload();
+    }
+  };
 
   const runCheckup = async () => {
     setRunning(true);
     setError(null);
     setResult(null);
+    const startedAt = Date.now();
+    setModalState({
+      ...initialCheckupState(),
+      open: true,
+      phase: 'starting',
+      startedAt
+    });
     try {
       const url = `/api/agents/${encodeURIComponent(agentId)}/checkup${dbPath ? `?db=${encodeURIComponent(dbPath)}` : ''}`;
       const response = await fetch(url, { method: 'POST' });
-      const data = await response.json();
-      if (!response.ok) {
-        setError(data?.error || t.checkupError);
-      } else {
-        setResult(data);
-        // Refresh the page so server-side getAgentHealthReport re-runs.
-        if (typeof window !== 'undefined') {
-          window.location.reload();
+      if (!response.ok || !response.body) {
+        const data = await response.json().catch(() => ({}));
+        const message = data?.error || t.checkupError;
+        setError(message);
+        setModalState((prev) => ({ ...prev, error: message }));
+        return;
+      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let newlineIndex;
+        while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
+          const line = buffer.slice(0, newlineIndex).trim();
+          buffer = buffer.slice(newlineIndex + 1);
+          if (!line) continue;
+          let event;
+          try { event = JSON.parse(line); } catch { continue; }
+          setModalState((prev) => {
+            const elapsedMs = Date.now() - prev.startedAt;
+            if (event.type === 'progress') {
+              return {
+                ...prev,
+                elapsedMs,
+                phase: event.phase ?? prev.phase,
+                current: event.current ?? prev.current,
+                total: event.total ?? prev.total,
+                files: event.phase === 'files-listed' ? Number(event.total ?? 0) : prev.files,
+                sessions: event.imported_sessions ?? prev.sessions,
+                events: event.imported_events ?? prev.events,
+                lastFile: event.file ?? prev.lastFile,
+                hooksInstalled: event.phase === 'hooks-installed' ? Boolean(event.installed) : prev.hooksInstalled
+              };
+            }
+            if (event.type === 'done') {
+              setResult(event.result);
+              return {
+                ...prev,
+                elapsedMs,
+                phase: 'done',
+                current: prev.total,
+                files: event.result?.scanned_files ?? prev.files,
+                sessions: event.result?.imported_sessions ?? prev.sessions,
+                events: event.result?.imported_events ?? prev.events,
+                hooksInstalled: Boolean(event.result?.hooks_installed),
+                result: event.result
+              };
+            }
+            if (event.type === 'error') {
+              setError(event.message);
+              return { ...prev, error: event.message, elapsedMs };
+            }
+            return prev;
+          });
         }
       }
     } catch (err) {
-      setError(err?.message || t.checkupError);
+      const message = err?.message || t.checkupError;
+      setError(message);
+      setModalState((prev) => ({ ...prev, error: message }));
     } finally {
       setRunning(false);
     }
@@ -2367,7 +2590,14 @@ function HealthReportPage({ agentId, dbPath, initialReport, t, lang }) {
     h('div', { className: 'grid grid-cols-1 md:grid-cols-2 gap-gutter', key: 'tokens' }, [
       summaryStat(t.inputTokens, formatTokenCount(report?.total_input_tokens), 'info', 'input'),
       summaryStat(t.outputTokens, formatTokenCount(report?.total_output_tokens), 'info', 'output')
-    ])
+    ]),
+    h(CheckupProgressModal, {
+      agentName: displayName,
+      key: 'checkup-modal',
+      onClose: closeModal,
+      state: modalState,
+      t
+    })
   ]);
 }
 

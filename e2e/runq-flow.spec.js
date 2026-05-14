@@ -173,7 +173,9 @@ test('Agent check-up onboards Claude Code: installs hooks and imports history en
 
   // 1) POST the checkup API directly so we exercise the full server flow with
   //    a controlled HOME. The CTA in the UI uses the same endpoint.
-  const checkupUrl = `/api/agents/claude_code/checkup?home=${encodeURIComponent(tmpHome)}&db=${encodeURIComponent(dbPath)}`;
+  // Non-streaming variant — easier to assert on in a test. The UI uses the
+  // streamed NDJSON form so it can render progress.
+  const checkupUrl = `/api/agents/claude_code/checkup?home=${encodeURIComponent(tmpHome)}&db=${encodeURIComponent(dbPath)}&stream=0`;
   const response = await request.post(checkupUrl);
   expect(response.ok(), `checkup response ${response.status()}`).toBeTruthy();
   const result = await response.json();
@@ -202,6 +204,20 @@ test('Agent check-up onboards Claude Code: installs hooks and imports history en
   expect(second.ok()).toBeTruthy();
   const secondResult = await second.json();
   expect(secondResult.imported_events).toBe(0);
+
+  // 5) The streaming variant emits NDJSON progress events ending with a
+  //    {type:"done", result:{...}} line so the UI can drive a progress modal.
+  const streamUrl = checkupUrl.replace('&stream=0', '');
+  const streamResp = await request.post(streamUrl);
+  expect(streamResp.headers()['content-type']).toContain('application/x-ndjson');
+  const ndjsonBody = await streamResp.text();
+  const events = ndjsonBody.trim().split('\n').map((line) => JSON.parse(line));
+  expect(events.length).toBeGreaterThanOrEqual(3);
+  expect(events.some((e) => e.type === 'progress' && e.phase === 'install-hooks')).toBe(true);
+  expect(events.some((e) => e.type === 'progress' && e.phase === 'import')).toBe(true);
+  const doneEvent = events.find((e) => e.type === 'done');
+  expect(doneEvent?.result?.hooks_installed).toBe(true);
+  expect(doneEvent?.result?.imported_events).toBe(0);
 
   rmSync(tmpHome, { recursive: true, force: true });
 });
