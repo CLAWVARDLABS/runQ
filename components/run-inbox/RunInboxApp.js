@@ -19,12 +19,16 @@ const copy = {
     refresh: '刷新',
     languageToggle: 'English',
     notifications: '提醒',
+    privacyModeOn: '隐私模式 · 开',
+    privacyModeOff: '隐私模式 · 关',
+    privacyModeTooltipOn: '隐私模式开启 · 显示 metadata-first 提示与脱敏标记',
+    privacyModeTooltipOff: '隐私模式关闭 · 隐藏 metadata-first 提示',
     notificationCenter: '提醒中心',
     notificationCenterBody: '集中处理新建议、已采纳但待验证的改进项，以及已经被后续运行验证的结果。',
     pendingRecommendations: '待处理建议',
     pendingImpact: '等待验证',
     verifiedImpact: '已验证效果',
-    searchPlaceholder: '搜索运行 ID / Agent / 建议',
+    searchPlaceholder: '搜索会话 ID / Agent / 建议',
     dataSource: '数据源',
     helpDocs: '帮助文档',
     chooseDataSource: '切换数据源',
@@ -124,8 +128,8 @@ const copy = {
     outputTokens: 'Output',
     confidenceTrend: '信任分趋势',
     activityTrend: '命令 / 验证活动',
-    runInbox: '运行收件箱',
-    searchRuns: '搜索运行',
+    runInbox: '会话历史',
+    searchRuns: '搜索会话',
     timeline: '时间线',
     qualityInspector: '质量检查器',
     setupHealth: '接入健康度',
@@ -256,6 +260,10 @@ const copy = {
     workspace: 'Local Workspace',
     refresh: 'Refresh',
     languageToggle: '中文',
+    privacyModeOn: 'Privacy mode · on',
+    privacyModeOff: 'Privacy mode · off',
+    privacyModeTooltipOn: 'Privacy mode on — metadata-first notes and redaction badges visible',
+    privacyModeTooltipOff: 'Privacy mode off — metadata-first notes hidden',
     notifications: 'Notifications',
     notificationCenter: 'Notification Center',
     notificationCenterBody: 'Triage new recommendations, accepted improvements awaiting validation, and items verified by later runs.',
@@ -362,8 +370,8 @@ const copy = {
     outputTokens: 'Output',
     confidenceTrend: 'Trust score trend',
     activityTrend: 'Command / verification activity',
-    runInbox: 'Run Inbox',
-    searchRuns: 'Search runs',
+    runInbox: 'Session History',
+    searchRuns: 'Search sessions',
     timeline: 'Timeline',
     qualityInspector: 'Quality Inspector',
     setupHealth: 'Setup Health',
@@ -511,6 +519,13 @@ const sidebarItems = [
 function normalizeLang(lang) { return lang === 'en' ? 'en' : 'zh'; }
 function getStoredLang() { if (typeof window === 'undefined') return null; return window.localStorage.getItem('runq.lang'); }
 function setStoredLang(lang) { if (typeof window !== 'undefined') window.localStorage.setItem('runq.lang', lang); }
+function getStoredPrivacyMode() {
+  if (typeof window === 'undefined') return 'off';
+  return window.localStorage.getItem('runq.privacyMode') === 'on' ? 'on' : 'off';
+}
+function setStoredPrivacyMode(mode) {
+  if (typeof window !== 'undefined') window.localStorage.setItem('runq.privacyMode', mode === 'on' ? 'on' : 'off');
+}
 function apiDbQuery(dbPath) { return dbPath ? `?db=${encodeURIComponent(dbPath)}` : ''; }
 function appendDbParam(href, dbPath) {
   if (!dbPath || href.startsWith('http') || href.startsWith('#')) return href;
@@ -904,7 +919,27 @@ function MobileNav({ activeView, dbPath, t }) {
   }));
 }
 
-function TopBar({ t, lang, setLang, onRefresh, activeView, selectedAgent, notificationCount = 0, notificationHref = '/recommendations', searchQuery = '', dbPath = '', dataSources = [] }) {
+function PrivacyToggle({ enabled, onToggle, t }) {
+  return h('button', {
+    'aria-pressed': enabled ? 'true' : 'false',
+    'data-action': 'toggle-privacy-mode',
+    'data-privacy-mode': enabled ? 'on' : 'off',
+    className: [
+      'flex items-center gap-1.5 rounded-lg px-2 py-2 transition-all',
+      enabled
+        ? 'bg-primary/10 text-primary shadow-[0_0_10px_rgba(0,102,255,0.20)]'
+        : 'text-slate-500 hover:bg-slate-100/50 hover:text-primary'
+    ].join(' '),
+    onClick: onToggle,
+    title: enabled ? t.privacyModeTooltipOn : t.privacyModeTooltipOff,
+    type: 'button'
+  }, [
+    h(MaterialIcon, { className: 'text-[20px]', filled: enabled, name: 'shield' }),
+    h('span', { className: 'hidden text-[11px] font-bold uppercase tracking-wider md:inline' }, enabled ? t.privacyModeOn : t.privacyModeOff)
+  ]);
+}
+
+function TopBar({ t, lang, setLang, onRefresh, activeView, selectedAgent, notificationCount = 0, notificationHref = '/recommendations', searchQuery = '', dbPath = '', dataSources = [], privacyMode = 'off', onTogglePrivacy }) {
   const moduleLabel = {
     agents: t.navAgents,
     sessions: t.navSessions,
@@ -956,6 +991,7 @@ function TopBar({ t, lang, setLang, onRefresh, activeView, selectedAgent, notifi
         h(MaterialIcon, { className: 'pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[16px] text-slate-400', name: 'database' })
       ]) : null,
       h('div', { className: 'flex gap-2', key: 'actions' }, [
+        h(PrivacyToggle, { enabled: privacyMode === 'on', onToggle: onTogglePrivacy, t }),
         h('button', {
           className: 'p-2 text-slate-500 hover:bg-slate-100/50 rounded-lg transition-all',
           onClick: onRefresh,
@@ -1910,8 +1946,7 @@ function SessionsDetail({ selectedAgent, agents, agentSessions, visibleSessions,
     h('div', { className: 'grid grid-cols-1 lg:grid-cols-12 gap-gutter items-start' }, [
       h(RunInbox, { dbPath, key: 'inbox', sessions: visibleSessions, selectedSessionId, onSelect: selectSession, runSearch, setRunSearch, runFilter, setRunFilter, t }),
       h(QualityInspector, { key: 'quality', session: selectedSession, t })
-    ]),
-    selectedSession ? h(Timeline, { events: selectedEvents, eventSearch, eventTypeFilter, key: 'timeline', session: selectedSession, setEventSearch, setEventTypeFilter, t }) : null
+    ])
   ].filter(Boolean));
 }
 
@@ -2750,12 +2785,22 @@ export function RunInboxApp({ initialSessions = [], initialEvents = [], setupHea
   const [copiedSetupCommand, setCopiedSetupCommand] = useState(null);
   const [selectedSetupAgentId, setSelectedSetupAgentId] = useState(initialAgentId ?? 'codex');
   const [setupWizardOpen, setSetupWizardOpen] = useState(false);
+  const [privacyMode, setPrivacyModeState] = useState('off');
 
   useEffect(() => {
     const stored = getStoredLang();
     const normalized = normalizeLang(stored);
     if (stored && normalized !== lang) setLangState(normalized);
+    setPrivacyModeState(getStoredPrivacyMode());
   }, []);
+
+  function togglePrivacyMode() {
+    setPrivacyModeState((prev) => {
+      const next = prev === 'on' ? 'off' : 'on';
+      setStoredPrivacyMode(next);
+      return next;
+    });
+  }
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -2961,7 +3006,7 @@ export function RunInboxApp({ initialSessions = [], initialEvents = [], setupHea
   }, [
     h(Sidebar, { activeView, dbPath, key: 'sidebar', t }),
     h(MobileNav, { activeView, dbPath, key: 'mobile-nav', t }),
-    h(TopBar, { activeView, dataSources, dbPath, key: 'top', lang, notificationCount, notificationHref: appendDbParam(notificationHref, dbPath), onRefresh: refresh, searchQuery: runSearch, selectedAgent, setLang, t }),
+    h(TopBar, { activeView, dataSources, dbPath, key: 'top', lang, notificationCount, notificationHref: appendDbParam(notificationHref, dbPath), onRefresh: refresh, onTogglePrivacy: togglePrivacyMode, privacyMode, searchQuery: runSearch, selectedAgent, setLang, t }),
     h('main', { className: 'min-h-screen px-4 pb-28 pt-24 sm:ml-20 sm:px-8 sm:pb-12' }, [
       h('div', { className: 'mx-auto max-w-[1400px] space-y-8', key: 'container' }, viewContent)
     ]),

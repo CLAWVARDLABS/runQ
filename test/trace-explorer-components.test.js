@@ -170,7 +170,9 @@ test('AgentTraceExplorer renders expandable session traces in Chinese by default
   assert.match(html, /data-run-summary="trace-run-summary"/);
   assert.match(html, /data-task-list="session-tasks"/);
   assert.match(html, /data-task-recap="trace-summary"/);
-  assert.match(html, /data-redaction-note="metadata-first"/);
+  assert.match(html, /data-action="toggle-privacy-mode"/);
+  assert.match(html, /data-privacy-mode="off"/);
+  assert.doesNotMatch(html, /data-redaction-note="metadata-first"/);
   assert.match(html, /data-selected-task-id="task_1"/);
   assert.match(html, /data-task-workflow="react-flow"/);
   assert.match(html, /data-workflow-viewport="content-first"/);

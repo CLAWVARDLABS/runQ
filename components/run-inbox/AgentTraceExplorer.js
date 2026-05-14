@@ -22,7 +22,7 @@ const traceCopy = {
     refresh: '刷新',
     languageToggle: 'English',
     notifications: '提醒',
-    searchPlaceholder: '搜索运行 / 事件',
+    searchPlaceholder: '搜索会话 / 事件',
     traceExplorer: '追踪视图',
     title: 'Agent 会话追踪',
     subtitle: '基于真实事件重建模型调用、命令、文件、验证和反馈组成的证据时间线。',
@@ -48,6 +48,10 @@ const traceCopy = {
     sessionDuration: '持续',
     sessionEvents: '事件',
     closeDialog: '关闭',
+    privacyModeOn: '隐私模式 · 开',
+    privacyModeOff: '隐私模式 · 关',
+    privacyModeTooltipOn: '隐私模式开启 · 显示 metadata-first 提示与脱敏标记',
+    privacyModeTooltipOff: '隐私模式关闭 · 隐藏 metadata-first 提示',
     eyebrow: 'Trace Telemetry',
     sessionList: '会话列表',
     allAgents: '全部 Agent',
@@ -148,7 +152,7 @@ const traceCopy = {
     refresh: 'Refresh',
     languageToggle: '中文',
     notifications: 'Notifications',
-    searchPlaceholder: 'Search runs or events',
+    searchPlaceholder: 'Search sessions or events',
     traceExplorer: 'Trace Explorer',
     title: 'Agent Session Traces',
     subtitle: 'Evidence timeline reconstructed from real model, command, file, verification, and feedback events.',
@@ -174,6 +178,10 @@ const traceCopy = {
     sessionDuration: 'Duration',
     sessionEvents: 'events',
     closeDialog: 'Close',
+    privacyModeOn: 'Privacy mode · on',
+    privacyModeOff: 'Privacy mode · off',
+    privacyModeTooltipOn: 'Privacy mode on — metadata-first notes and redaction badges visible',
+    privacyModeTooltipOff: 'Privacy mode off — metadata-first notes hidden',
     eyebrow: 'Trace Telemetry',
     sessionList: 'Session List',
     allAgents: 'All agents',
@@ -312,6 +320,13 @@ const traceGroups = [
 function normalizeLang(lang) { return lang === 'en' ? 'en' : 'zh'; }
 function getStoredLang() { if (typeof window === 'undefined') return null; return window.localStorage.getItem('runq.lang'); }
 function setStoredLang(lang) { if (typeof window !== 'undefined') window.localStorage.setItem('runq.lang', lang); }
+function getStoredPrivacyMode() {
+  if (typeof window === 'undefined') return 'off';
+  return window.localStorage.getItem('runq.privacyMode') === 'on' ? 'on' : 'off';
+}
+function setStoredPrivacyMode(mode) {
+  if (typeof window !== 'undefined') window.localStorage.setItem('runq.privacyMode', mode === 'on' ? 'on' : 'off');
+}
 
 function MaterialIcon({ name, className = '', filled = false, style }) {
   return h('span', {
@@ -804,7 +819,27 @@ function Sidebar({ activeView }) {
   ]);
 }
 
-function TopBar({ t, lang, setLang, onRefresh, notificationCount = 0, searchQuery = '' }) {
+function PrivacyToggle({ enabled, onToggle, t }) {
+  return h('button', {
+    'aria-pressed': enabled ? 'true' : 'false',
+    'data-action': 'toggle-privacy-mode',
+    'data-privacy-mode': enabled ? 'on' : 'off',
+    className: [
+      'relative flex items-center gap-1.5 rounded-lg px-2 py-2 transition-all',
+      enabled
+        ? 'bg-primary/10 text-primary-container shadow-[0_0_10px_rgba(0,102,255,0.25)]'
+        : 'text-outline hover:bg-slate-100/50 hover:text-primary'
+    ].join(' '),
+    onClick: onToggle,
+    title: enabled ? t.privacyModeTooltipOn : t.privacyModeTooltipOff,
+    type: 'button'
+  }, [
+    h(MaterialIcon, { className: 'text-[20px]', filled: enabled, name: 'shield' }),
+    h('span', { className: 'hidden text-[11px] font-bold uppercase tracking-wider md:inline' }, enabled ? t.privacyModeOn : t.privacyModeOff)
+  ]);
+}
+
+function TopBar({ t, lang, setLang, onRefresh, notificationCount = 0, searchQuery = '', privacyMode = 'off', onTogglePrivacy }) {
   return h('header', {
     className: 'fixed left-20 right-0 top-0 z-40 flex h-16 items-center justify-between border-b border-white/20 bg-white/70 px-8 backdrop-blur-xl'
   }, [
@@ -820,6 +855,7 @@ function TopBar({ t, lang, setLang, onRefresh, notificationCount = 0, searchQuer
           type: 'search'
         })
       ]),
+      h(PrivacyToggle, { enabled: privacyMode === 'on', onToggle: onTogglePrivacy, t }),
       h('button', {
         className: 'p-2 text-outline hover:text-primary rounded-lg hover:bg-slate-100/50 transition-all',
         onClick: onRefresh,
@@ -906,7 +942,7 @@ function TaskList({ tasks, selectedTaskId, onSelectTask, t }) {
   ]);
 }
 
-function SelectedEventPanel({ event, t }) {
+function SelectedEventPanel({ event, t, privacyMode = 'off' }) {
   if (!event) {
     return h('section', {
       'data-selected-event-id': '',
@@ -916,6 +952,7 @@ function SelectedEventPanel({ event, t }) {
       h('p', null, t.noEventSelected)
     ]);
   }
+  const showRedactionNote = privacyMode === 'on' && (event.privacy?.redacted || event.privacy?.level !== 'raw');
   return h('section', {
     'data-selected-event-id': event.event_id,
     className: 'glass-card rounded-3xl p-lg'
@@ -928,9 +965,11 @@ function SelectedEventPanel({ event, t }) {
       h('div', { className: 'flex justify-between gap-3' }, [h('span', { className: 'text-outline' }, 'event_id'), h('span', { className: 'truncate font-mono text-mono' }, event.event_id)]),
       h('div', { className: 'flex justify-between gap-3' }, [h('span', { className: 'text-outline' }, t.eventTimestamp), h('span', { className: 'truncate font-mono text-mono' }, event.timestamp || '-')]),
       h('div', { className: 'flex justify-between gap-3' }, [h('span', { className: 'text-outline' }, t.eventSource), h('span', { className: 'font-mono text-mono' }, event.source || t.sourceUnknown)]),
-      h('div', { className: 'flex justify-between gap-3' }, [h('span', { className: 'text-outline' }, t.privacyMode), h('span', { className: 'font-mono text-mono' }, event.privacy?.level || 'metadata')])
+      privacyMode === 'on'
+        ? h('div', { className: 'flex justify-between gap-3' }, [h('span', { className: 'text-outline' }, t.privacyMode), h('span', { className: 'font-mono text-mono' }, event.privacy?.level || 'metadata')])
+        : null
     ]),
-    event.privacy?.redacted || event.privacy?.level !== 'raw'
+    showRedactionNote
       ? h('p', {
           className: 'mt-md rounded-2xl border border-dashed border-outline-variant/50 bg-surface-container-low/50 p-3 text-xs leading-5 text-outline',
           'data-redaction-note': 'metadata-first'
@@ -1494,7 +1533,7 @@ function ExpandedWorkflowModal({ actions, onClose, onSelectEvent, selectedEventI
   ]);
 }
 
-function TaskFlow({ actions, selectedEventId, onSelectEvent, selectedTask, t }) {
+function TaskFlow({ actions, selectedEventId, onSelectEvent, selectedTask, t, privacyMode = 'off' }) {
   const [expanded, setExpanded] = useState(false);
   const toolCount = actions.filter((action) => action.kind === 'tool').length;
   const recap = buildTaskRecap(selectedTask, actions, t);
@@ -1560,7 +1599,7 @@ function TaskFlow({ actions, selectedEventId, onSelectEvent, selectedTask, t }) 
               h('p', { className: 'text-label-caps font-label-caps uppercase text-outline' }, t.taskResult),
               h('p', { className: 'mt-1 line-clamp-3 text-sm leading-6 text-on-surface-variant' }, recap.result)
             ]),
-            recap.redacted
+            recap.redacted && privacyMode === 'on'
               ? h('p', {
                   className: 'md:col-span-3 rounded-xl border border-dashed border-outline-variant/45 bg-surface-container-low/50 px-3 py-2 text-xs leading-5 text-outline',
                   'data-redaction-note': 'metadata-first'
@@ -2212,13 +2251,13 @@ function EmptyTraceState({ t, lang, recentSessions = [], onSelectSession }) {
 }
 
 
-function Inspector({ session, events, selectedEvent, t }) {
+function Inspector({ session, events, selectedEvent, t, privacyMode = 'off' }) {
   const tele = session?.telemetry || {};
   const toolCalls = tele.tool_call_count || 0;
   const trustScore = trustScoreValue(session?.quality);
   const dimensions = trustBreakdownEntries(session?.quality);
   return h('aside', { className: 'space-y-gutter' }, [
-    h(SelectedEventPanel, { event: selectedEvent, key: 'selected', t }),
+    h(SelectedEventPanel, { event: selectedEvent, key: 'selected', privacyMode, t }),
     h('section', { className: 'glass-card rounded-3xl p-lg' }, [
       h('h2', { className: 'mb-md text-h3 font-h3 tracking-tight' }, t.sessionInspector),
       h('div', { className: 'space-y-2 text-sm' }, [
@@ -2298,12 +2337,22 @@ export function AgentTraceExplorer({ initialSessions = [], initialEvents = [], i
   const [query, setQuery] = useState('');
   const [selectedEventId, setSelectedEventId] = useState(initialSelectedEventId ?? firstInspectableEventId(initialEvents));
   const [selectedTaskId, setSelectedTaskId] = useState(null);
+  const [privacyMode, setPrivacyModeState] = useState('off');
 
   useEffect(() => {
     const stored = getStoredLang();
     const normalized = normalizeLang(stored);
     if (stored && normalized !== lang) setLangState(normalized);
+    setPrivacyModeState(getStoredPrivacyMode());
   }, []);
+
+  function togglePrivacyMode() {
+    setPrivacyModeState((prev) => {
+      const next = prev === 'on' ? 'off' : 'on';
+      setStoredPrivacyMode(next);
+      return next;
+    });
+  }
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -2445,7 +2494,7 @@ export function AgentTraceExplorer({ initialSessions = [], initialEvents = [], i
         h('div', { className: 'grid grid-cols-1 lg:grid-cols-12 gap-gutter', key: 'body' }, [
           h('section', { className: 'lg:col-span-8 space-y-gutter' }, [
             h(TaskList, { key: 'tasks', onSelectTask: selectTask, selectedTaskId: selectedTask?.id || '', tasks, t }),
-            h(TaskFlow, { actions: actionFlow, key: 'task-flow', onSelectEvent: setSelectedEventId, selectedEventId: selectedEvent?.event_id ?? null, selectedTask, t }),
+            h(TaskFlow, { actions: actionFlow, key: 'task-flow', onSelectEvent: setSelectedEventId, privacyMode, selectedEventId: selectedEvent?.event_id ?? null, selectedTask, t }),
             h('div', { className: 'glass-card-strong rounded-3xl p-lg' }, [
               h('span', { className: 'text-label-caps font-label-caps uppercase text-primary' }, t.evidenceTimeline),
               h('h3', { className: 'mt-2 text-h3 font-h3 tracking-tight' }, t.groupedTraceEvents)
@@ -2460,7 +2509,7 @@ export function AgentTraceExplorer({ initialSessions = [], initialEvents = [], i
                 })
           ]),
           h('aside', { className: 'lg:col-span-4 space-y-gutter' }, [
-            h(Inspector, { events: linkedEvents, selectedEvent, session: selectedSession, t })
+            h(Inspector, { events: linkedEvents, privacyMode, selectedEvent, session: selectedSession, t })
           ])
         ])
       ])
@@ -2474,7 +2523,7 @@ export function AgentTraceExplorer({ initialSessions = [], initialEvents = [], i
     'data-selected-session-id': selectedSession?.session_id || ''
   }, [
     h(Sidebar, { activeView: 'traces', key: 'sidebar' }),
-    h(TopBar, { key: 'top', lang, notificationCount, onRefresh: refresh, searchQuery: query, setLang, t }),
+    h(TopBar, { key: 'top', lang, notificationCount, onRefresh: refresh, onTogglePrivacy: togglePrivacyMode, privacyMode, searchQuery: query, setLang, t }),
     h('main', { className: 'ml-20 pt-16 px-8 pb-12 min-h-screen' }, [
       h('div', { className: 'mx-auto max-w-[1400px] space-y-margin' }, [
         h('header', { className: 'mb-lg flex flex-wrap items-end justify-between gap-4', key: 'head' }, [

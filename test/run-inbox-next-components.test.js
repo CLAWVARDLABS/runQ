@@ -197,13 +197,13 @@ test('RunInboxApp renders Sessions as a separate subpage with run quality', () =
   assert.match(html, /Agent 观测详情/);
   assert.match(html, /href="\/agents\/openclaw"/);
   assert.match(html, /href="\/agents\/claude_code"/);
-  assert.match(html, /搜索运行/);
+  assert.match(html, /搜索会话/);
   assert.match(html, /能力总览/);
   assert.match(html, /data-agent-capability-overview="true"/);
   assert.match(html, /模型调用/);
   assert.match(html, /文件变更/);
   assert.match(html, /需复核/);
-  assert.match(html, /运行收件箱/);
+  assert.match(html, /会话历史/);
   assert.match(html, /质量检查器/);
   assert.match(html, /RunQ 信任分/);
   assert.match(html, /Trust Model/);
