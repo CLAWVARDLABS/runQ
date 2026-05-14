@@ -1787,7 +1787,17 @@ function AdvisorPanel({ recommendations, t }) {
             // Compose with session_id because allRecs is a cross-session
             // flatMap — the same recommendation_id (e.g. derived from category)
             // can legitimately appear once per session.
-            return h('div', { className: `glass-card p-5 rounded-2xl border-l-4 ${p.left} group cursor-pointer hover:bg-white transition-all`, key: `${rec.session_id ?? 'unknown'}:${rec.recommendation_id || i}` },
+            const recHref = rec.session_id
+              ? `/recommendations?session=${encodeURIComponent(rec.session_id)}`
+              : '/recommendations';
+            return h('a', {
+              className: `glass-card p-5 rounded-2xl border-l-4 ${p.left} group cursor-pointer hover:bg-white transition-all block focus:outline-none focus:ring-2 focus:ring-primary/40`,
+              'data-action': 'open-advisor-recommendation',
+              'data-recommendation-id': rec.recommendation_id || '',
+              'data-session-id': rec.session_id || '',
+              href: recHref,
+              key: `${rec.session_id ?? 'unknown'}:${rec.recommendation_id || i}`
+            },
               h('div', { className: 'flex gap-4' }, [
                 h('div', { className: `w-10 h-10 rounded-xl ${p.wrap} flex items-center justify-center shrink-0` },
                   h(MaterialIcon, { className: 'text-[20px]', name: p.icon })
