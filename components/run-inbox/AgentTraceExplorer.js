@@ -1422,9 +1422,9 @@ function Combobox({
       'aria-haspopup': 'listbox',
       'aria-label': ariaLabel,
       className: [
-        'flex w-full items-center gap-3 rounded-2xl border bg-white/80 px-4 py-3 text-left transition-all',
+        'flex w-full items-center gap-3 rounded-2xl border bg-white px-4 py-3 text-left transition-all',
         disabled
-          ? 'cursor-not-allowed border-dashed border-outline-variant/40 bg-white/50 text-outline'
+          ? 'cursor-not-allowed border-dashed border-outline-variant/40 bg-surface-container-low text-outline'
           : open
             ? 'border-primary shadow-[0_0_22px_rgba(0,102,255,0.18)]'
             : 'border-outline-variant/40 hover:border-primary/50'
@@ -1441,10 +1441,10 @@ function Combobox({
     ]),
     open
       ? h('div', {
-          className: 'absolute left-0 right-0 z-30 mt-2 max-h-[420px] overflow-hidden rounded-2xl border border-outline-variant/40 bg-white/95 shadow-[0_18px_50px_-20px_rgba(15,23,42,0.45)] backdrop-blur',
+          className: 'absolute left-0 right-0 z-30 mt-2 max-h-[420px] overflow-hidden rounded-2xl border border-outline-variant/40 bg-white shadow-[0_18px_50px_-20px_rgba(15,23,42,0.45)]',
           role: 'listbox'
         }, [
-          h('div', { className: 'relative border-b border-outline-variant/40 bg-surface-container-low/70 px-3 py-2' }, [
+          h('div', { className: 'relative border-b border-outline-variant/40 bg-surface-container-low px-3 py-2' }, [
             h(MaterialIcon, { className: 'absolute left-5 top-1/2 -translate-y-1/2 text-[18px] text-outline', name: 'search' }),
             h('input', {
               className: 'w-full rounded-xl border-none bg-transparent py-1.5 pl-8 pr-2 text-sm outline-none',
@@ -1676,7 +1676,7 @@ function PickerBar({
         h('button', {
           'data-action': 'open-jump-palette',
           'aria-label': t.pickerSearchAll,
-          className: 'flex shrink-0 items-center gap-2 rounded-2xl border border-outline-variant/40 bg-white/80 px-3 text-xs font-semibold text-on-surface-variant transition-all hover:border-primary/40 hover:text-primary',
+          className: 'flex shrink-0 items-center gap-2 rounded-2xl border border-outline-variant/40 bg-white px-3 text-xs font-semibold text-on-surface-variant transition-all hover:border-primary/40 hover:text-primary',
           onClick: onOpenPalette,
           title: t.pickerSearchAll,
           type: 'button'
@@ -1769,8 +1769,8 @@ function JumpToSessionPalette({ sessions, onClose, onSelect, t, lang }) {
     onClick: (event) => { if (event.target === event.currentTarget) onClose(); },
     role: 'dialog'
   }, [
-    h('div', { className: 'w-full max-w-[640px] overflow-hidden rounded-3xl border border-white/40 bg-white/95 shadow-[0_30px_80px_-30px_rgba(15,23,42,0.6)]' }, [
-      h('div', { className: 'relative border-b border-outline-variant/40 bg-surface-container-low/70 px-4 py-3' }, [
+    h('div', { className: 'w-full max-w-[640px] overflow-hidden rounded-3xl border border-outline-variant/40 bg-white shadow-[0_30px_80px_-30px_rgba(15,23,42,0.6)]' }, [
+      h('div', { className: 'relative border-b border-outline-variant/40 bg-surface-container-low px-4 py-3' }, [
         h(MaterialIcon, { className: 'absolute left-6 top-1/2 -translate-y-1/2 text-[20px] text-outline', name: 'search' }),
         h('input', {
           className: 'w-full rounded-xl border-none bg-transparent py-1.5 pl-9 pr-2 text-sm outline-none',
