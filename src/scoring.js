@@ -115,9 +115,19 @@ function buildTrustBreakdown({
   };
 }
 
+import { applyUniversalSignals } from './scoring/universal.js';
+
 export function scoreRun(events) {
   const reasons = [];
   const scoreContributions = [];
+
+  // Universal human↔agent signals run first. These apply to ANY agent (coding
+  // or conversation) because they observe the user's behavior — prompt
+  // repeats, rapid retries, sign-off tone, session abandonment. The coding-
+  // specific signals below stack on top.
+  const universal = applyUniversalSignals(events);
+  for (const c of universal.contributions) scoreContributions.push(c);
+  for (const r of universal.reasons) reasons.push(r);
   const lifecycleEvents = events.filter((event) => event.event_type === 'session.started' || event.event_type === 'session.ended');
   const promptEvents = events.filter((event) => event.event_type === 'user.prompt.submitted');
   const modelEvents = events.filter((event) => event.event_type.startsWith('model.'));
