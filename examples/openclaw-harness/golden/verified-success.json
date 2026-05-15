@@ -72,7 +72,8 @@
       "permission_friction": 0,
       "loop_risk": 0,
       "cost_efficiency": 0.65,
-      "score_version": "0.3.0",
+      "score_version": "0.4.0",
+      "agent_category": "task",
       "reasons": [
         "verification_passed_after_changes",
         "satisfaction_accepted"

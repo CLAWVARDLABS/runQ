@@ -116,6 +116,7 @@ function buildTrustBreakdown({
 }
 
 import { applyUniversalSignals } from './scoring/universal.js';
+import { profileFromEvents } from './agent-profiles.js';
 
 export function scoreRun(events) {
   const reasons = [];
@@ -124,10 +125,14 @@ export function scoreRun(events) {
   // Universal human↔agent signals run first. These apply to ANY agent (coding
   // or conversation) because they observe the user's behavior — prompt
   // repeats, rapid retries, sign-off tone, session abandonment. The coding-
-  // specific signals below stack on top.
+  // specific signals below stack on top, but their hard caps only fire when
+  // the dominant framework is a coding-category profile.
   const universal = applyUniversalSignals(events);
   for (const c of universal.contributions) scoreContributions.push(c);
   for (const r of universal.reasons) reasons.push(r);
+
+  const profile = profileFromEvents(events);
+  const isCodingDomain = profile.category === 'coding';
   const lifecycleEvents = events.filter((event) => event.event_type === 'session.started' || event.event_type === 'session.ended');
   const promptEvents = events.filter((event) => event.event_type === 'user.prompt.submitted');
   const modelEvents = events.filter((event) => event.event_type.startsWith('model.'));
@@ -316,20 +321,24 @@ export function scoreRun(events) {
   }
 
   let trustScore = 50 + scoreContributions.reduce((sum, item) => sum + item.impact, 0);
-  if (failedVerification.length > 0 && sessionEnded && Number(latestVerification?.payload?.exit_code) !== 0) {
+  // Caps below assume coding-agent semantics (verification commands / file
+  // changes are the primary success signal). For conversation / task agents
+  // the user might never run a shell command — punishing them for that
+  // collapses the distribution. Gate the coding caps on profile category.
+  if (isCodingDomain && failedVerification.length > 0 && sessionEnded && Number(latestVerification?.payload?.exit_code) !== 0) {
     trustScore = Math.min(trustScore, 28);
   }
-  if (fileChanges.length > 0 && passedVerification.length > 0 && Number(latestVerification?.payload?.exit_code) === 0 && !satisfaction) {
+  if (isCodingDomain && fileChanges.length > 0 && passedVerification.length > 0 && Number(latestVerification?.payload?.exit_code) === 0 && !satisfaction) {
     trustScore = Math.min(trustScore, 88);
   }
-  if (fileChanges.length > 0 && verificationCommands.length === 0) {
+  if (isCodingDomain && fileChanges.length > 0 && verificationCommands.length === 0) {
     // Cap raised from 48 → 70 so the tool-success-rate signals can lift a
     // well-executed but untested session above the previous tight band.
     // Sessions with verification still float higher; sessions with failed
     // verification still bottom out below.
     trustScore = Math.min(trustScore, 70);
   }
-  if (fileChanges.length === 0 && verificationCommands.length === 0 && !satisfaction) {
+  if (isCodingDomain && fileChanges.length === 0 && verificationCommands.length === 0 && !satisfaction) {
     trustScore = Math.min(trustScore, 72);
   }
   if ([...failedCommandCounts.values()].some((count) => count >= 3)) {
@@ -385,7 +394,8 @@ export function scoreRun(events) {
     permission_friction: normalizedPermissionFriction,
     loop_risk: normalizedLoopRisk,
     cost_efficiency: normalizedCostEfficiency,
-    score_version: '0.3.0',
+    score_version: '0.4.0',
+    agent_category: profile.category,
     reasons: Array.from(new Set(reasons)),
     score_contributions: scoreContributions.filter((item) => item.impact !== 0)
   };
