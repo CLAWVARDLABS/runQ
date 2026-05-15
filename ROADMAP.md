@@ -1,89 +1,108 @@
 # RunQ Roadmap
 
-RunQ is in `0.2.x` local alpha. The project goal is to become an open protocol and local-first workbench for agent run quality.
+> This document is the authoritative source for "what is RunQ, what are we building next,
+> and what are we deliberately not building". Every PR should be reference-able against it.
+> Last updated: 2026-05.
 
-This roadmap is directional, not a promise of dates.
+## Positioning
 
-## v0.3: Better Run Explanation
+**RunQ is observability for humans using AI agents to get work done.**
 
-Focus: make a single agent run understandable and reviewable.
+We measure the *human ↔ agent* loop — what you asked, how the agent responded, whether you
+got the outcome you wanted — across the four CLI agents we support today
+(Claude Code, Codex, OpenClaw, Hermes). Everything stays on your machine. Free forever
+for individuals; paid tiers for teams and enterprises (later).
 
-- Richer Run Summary with clearer request, plan, execution, verification, and outcome sections.
-- Shareable or exportable Agent Run Report.
-- Better workflow graph grouping for model, tool, MCP, skill, command, file, and verification steps.
-- Stronger evidence links from scores and recommendations back to exact events.
-- Improved demo walkthrough for first-time users.
+We are **not**:
 
-Success criteria:
+- **LangSmith / Langfuse / Arize** — those observe the *agent app ↔ LLM* loop and serve
+  the developers building agents. Their data model (chain/llm/tool spans on their cloud)
+  is the wrong shape for our user.
+- **Pendo Agent Analytics** — observes end-users using AI features inside your product;
+  serves PMs and customer-success teams. We don't.
+- **A LangChain wrapper** — we hook in at the agent runtime layer, no SDK to install.
+- **A multi-modal playground / prompt hub / agent IDE** — out of scope.
 
-- A new user can inspect a demo trace and explain what happened without reading raw event JSON.
-- A reviewer can decide whether a run is trustworthy from the report page.
+## What we're focused on right now
 
-## v0.4: Adapter Ecosystem
+**CLI agents only.** The four we already support are enough surface area for the next two
+quarters. We are deliberately not chasing Cursor / Cline / Continue / Claude Desktop /
+ChatGPT Desktop until the CLI experience is excellent and we have validated demand.
 
-Focus: make it easy for agent authors to connect to RunQ.
+Why CLI-first:
 
-- Clear adapter authoring guide.
-- More fixture-driven adapter tests.
-- Explicit task boundary events.
-- Better support for generic tool, MCP, skill, and workflow runtimes.
-- Import/export compatibility checks for third-party agent traces.
+- Hook-based capture is reliable (files + stdin, no Electron/IDE state reverse-engineering)
+- CLI users are technical early adopters, the right audience for OSS
+- Adapter maintenance cost stays bounded
+- The CLI agent space is **growing fast** — Claude Code GA, Codex back, new tools weekly
 
-Success criteria:
+## 6-week execution plan
 
-- A new integration can produce a useful Run Summary with a small set of required events.
-- Adapter contributors can add fixtures and tests without understanding the whole product UI.
+Each row below is a self-contained release. Verification = unit tests + manual walkthrough
+on the maintainer's own `~/.claude` and `~/.codex` history (a corpus of ~1800 real sessions).
 
-## v0.5: Comparison And Improvement Loop
+| Week | Theme | Deliverable | Critical files |
+|---|---|---|---|
+| **1–2** | Scoring tiered | Split `src/scoring.js` into `src/scoring/universal.js` (prompt_repeat, prompt_revision, inter_prompt_pause, session_close_kind, acknowledge_signal — applies to all agents) and `src/scoring/domains/{coding,conversation}.js` (coding-specific verification/exit_code stays here). Orchestrator picks domain based on framework. Backward-compatible `scoreRun` export. | `src/scoring/`, `src/agent-profiles.js` (new) |
+| **3** | Adapter depth | Audit each existing importer + hook for missing event coverage. Claude Code: emit subagent traces from the `Task` tool. Codex: emit `reasoning` items, `turn_context` model switches, cwd changes. OpenClaw/Hermes: confirm every messages column is consumed. | `src/importers/*`, `adapters/*/normalize.js` |
+| **4** | Compare two runs | New `/compare?a=<id>&b=<id>` page rendering both trace trees side-by-side. Common prefix collapsed, divergence highlighted in red. Diff summary header (tool counts, verification status, durations). Reuse existing `buildActionTree` / `TaskWorkflowCanvas`. | `app/compare/page.js` (new), `components/run-inbox/RunCompare.js` (new) |
+| **5** | Flaky prompt detection | Cluster sessions by `prompt_hash`; flag clusters with high `trust_score` variance as "flaky prompts". New tile in health-report + dedicated `/flaky` view listing each flaky prompt with success/fail counts and links to individual runs. | `src/flaky.js` (new), `components/run-inbox/RunInboxApp.js` |
+| **6a** | `runq replay` MVP | CLI `runq replay <session_id> [--prompt-file new.txt] [--model X]` spawns a headless Claude Code or Codex with the original prompt + cwd, captures the new run into RunQ as a child of the original (`replayed_from: <id>`). Only the two agents with headless CLI; OpenClaw/Hermes later. | `src/cli.js`, `src/replay.js` (new), `adapters/claude-code/spawn.js`, `adapters/codex/spawn.js` |
+| **6b** | Productivity dashboard | New `/productivity` page powered entirely by the universal-layer signals from Week 1–2. Today/week aggregate of: total session time, prompt count, retry rate, abandonment rate, top frustration prompts. Works for all four CLI agents without coding-specific assumptions. | `app/productivity/page.js` (new), `src/productivity.js` (new) |
 
-Focus: turn run traces into operational decisions.
+## Foundational architecture changes (now)
 
-- Agent comparison across reliability, verification, cost, and rework signals.
-- Prompt/config/workflow before-and-after comparison.
-- Recommendation impact analysis across follow-up runs.
-- Better readiness and quality gates for real local sessions.
-- Trend views for common failure modes.
+Two refactors should land **before** the weekly plan if not at the same time, because
+everything else benefits:
 
-Success criteria:
+1. **`src/scoring/` directory replaces `src/scoring.js`** — see Week 1–2. Universal layer
+   first, domains second.
+2. **`src/agent-profiles.js`** — promote `framework` from a stringly-typed enum into a
+   registered profile (`id`, `category: coding|conversation|task`, `display_name`, `icon`,
+   `gradient`, `default_scoring_domain`, `event_capture_strategy`). Adapters register their
+   profile; scoring picks the right domain automatically; UI reads `category` for word choice
+   (Trust Score vs Effectiveness). Adding a 5th adapter later becomes a one-file change.
 
-- A team can compare two agents or two workflows and identify which one is more reliable.
-- Accepted recommendations show measurable follow-up impact.
+## What we are explicitly **not** building
 
-## v0.6: Local-First Team Sync Design
+- ❌ Cloud SaaS (data leaving the device — that's the LangSmith / Pendo path, breaks our moat)
+- ❌ Cursor / Cline / Continue / Claude Desktop / ChatGPT Desktop adapters
+  (reconsider after CLI version has paying users and proves demand)
+- ❌ Multi-modal (images, PDFs, audio) — not relevant for CLI agent users
+- ❌ Per-LLM-call token breakdown UI — we surface aggregate token use; per-call drilldown
+  is LangSmith's domain
+- ❌ Prompt hub / playground / version registry — community tools (LangChain Hub) exist
+- ❌ LLM-as-judge built-in (use customer's own provider key if/when added — never host the
+  judge model ourselves)
+- ❌ Generic OTEL integration — adds complexity, not in line with hook-first capture
+- ❌ Custom agent SDK requiring users to wrap their code
 
-Focus: prepare the commercial/team path without compromising local-first open source.
+## What we sell (later — not now)
 
-- Cloud-sync metadata envelope design.
-- Team dashboard protocol draft.
-- Audit/export format for run bundles.
-- Privacy and redaction policy controls.
-- Workspace-level agent reliability leaderboard.
+The OSS individual edition is free forever. Two paid tiers are planned once the CLI
+experience hits "v1.0" quality and we have a beachhead of organic users:
 
-Success criteria:
+- **Team Self-Hosted (~$29/seat/month, billed annually, 5-seat minimum)**: team aggregator
+  service running in the customer's VPC, cross-developer dashboards, SSO, Slack alerts,
+  shared flaky-prompt library, audit log.
+- **Enterprise (~$79–150/seat/month)**: SAML/SCIM, policy engine (block commits below trust
+  threshold, alert on secret-pattern prompts), AI governance dashboard, BYOC deployment
+  module, SOC 2 reports, dedicated support + SLA.
 
-- Local users can keep all data local.
-- Teams can evaluate a sync path that shares only intended metadata.
+Both tiers preserve the local-first promise: original prompt/code stays on the developer's
+machine, only redacted aggregates flow to the team/enterprise dashboard.
 
-## v1.0: Stable Protocol
+## Decision filter for every PR
 
-Focus: stabilize the protocol and compatibility guarantees.
+Before merging, ask:
 
-- Stable event envelope.
-- Stable core event taxonomy.
-- Stable privacy levels and redaction expectations.
-- Stable score and recommendation evidence contracts.
-- Migration guide from pre-1.0 schemas.
+1. Does this strengthen "Human ↔ Agent observability" framing, or muddy it?
+2. Does it work across all four supported CLI agents, or only coding ones? If coding-only,
+   does it cleanly live in the **domain** layer?
+3. Does it require sending data off the machine? (If yes, hard stop.)
+4. Is this a feature individuals want, a feature teams want, or a feature only enterprise
+   wants? Make sure it lives in the right tier and isn't accidentally given away.
+5. Can a non-engineer use the page / understand the metric? (Even if the user is a
+   developer, plain language wins.)
 
-Success criteria:
-
-- Third-party agent runtimes can target RunQ without tracking every internal product change.
-- Protocol-breaking changes require explicit versioning and migration notes.
-
-## Ongoing Principles
-
-- Local-first by default.
-- Metadata-first privacy.
-- Every score must cite evidence.
-- Every recommendation must be actionable.
-- Adapters should preserve useful quality metadata without storing raw private content.
-- Product UI should explain agent work to humans, not merely display logs.
+If a PR fails any of (1)(2)(3), it should be reconsidered — not silently merged.
