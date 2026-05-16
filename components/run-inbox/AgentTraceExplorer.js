@@ -133,6 +133,23 @@ const traceCopy = {
     other: '其他',
     events: '事件',
     exportJson: '导出 JSON',
+    replayCta: '重跑此 session',
+    replayUnavailable: 'Replay 仅支持 Claude Code / Codex',
+    replayModalTitle: '重跑 session — 回归测试',
+    replayModalBody: '把这次 session 的第一个 prompt 在沙箱里重跑一遍,完成后跳到 Compare 页对比两次结果。',
+    replayInplace: '在原 cwd 运行(不推荐,会改你的 repo)',
+    replayInplaceWarn: '⚠ 关闭 sandbox 会让 agent 直接改原仓库',
+    replayModel: '模型覆盖(留空 = 用同一个)',
+    replayStartButton: '开始 Replay',
+    replayRunning: '运行中…',
+    replayCancel: '关闭',
+    replayPhaseStart: '准备',
+    replayPhaseLoaded: '已加载原 session',
+    replayPhaseSandbox: '沙箱已就绪',
+    replayPhaseSpawn: '已启动 agent',
+    replayPhaseDone: '完成 ',
+    replayDoneCta: '查看 diff',
+    replayError: '失败',
     openSession: '打开会话',
     privacyMode: '隐私模式',
     eventCount: '事件数',
@@ -263,6 +280,23 @@ const traceCopy = {
     other: 'Other',
     events: 'events',
     exportJson: 'Export JSON',
+    replayCta: 'Rerun this session',
+    replayUnavailable: 'Replay supports Claude Code / Codex only',
+    replayModalTitle: 'Rerun session — regression test',
+    replayModalBody: 'Replays the first prompt of this session inside a sandboxed copy of the original cwd, then jumps to Compare for a side-by-side diff.',
+    replayInplace: 'Run in original cwd (not recommended; will modify your repo)',
+    replayInplaceWarn: '⚠ Skipping the sandbox lets the agent change your real repo',
+    replayModel: 'Model override (blank = same)',
+    replayStartButton: 'Start replay',
+    replayRunning: 'Running…',
+    replayCancel: 'Close',
+    replayPhaseStart: 'Preparing',
+    replayPhaseLoaded: 'Loaded original',
+    replayPhaseSandbox: 'Sandbox ready',
+    replayPhaseSpawn: 'Agent started',
+    replayPhaseDone: 'Done ',
+    replayDoneCta: 'View diff',
+    replayError: 'Failed',
     openSession: 'Open Session',
     privacyMode: 'Privacy mode',
     eventCount: 'Event count',
@@ -2335,6 +2369,105 @@ function Inspector({ session, events, selectedEvent, t, privacyMode = 'off' }) {
   ]);
 }
 
+const REPLAY_PHASE_LABELS = {
+  starting: 'replayPhaseStart',
+  queued: 'replayPhaseStart',
+  loaded: 'replayPhaseLoaded',
+  'sandbox-ready': 'replayPhaseSandbox',
+  spawning: 'replayPhaseSpawn',
+  'spawn-finished': 'replayPhaseSpawn',
+  importing: 'replayPhaseSpawn',
+  done: 'replayPhaseDone'
+};
+
+function ReplayModal({ session, state, t, onClose, onStart, onChange }) {
+  if (!state.open) return null;
+  const dbParam = typeof window !== 'undefined' ? new URL(window.location.href).searchParams.get('db') : null;
+  const compareHref = state.result
+    ? `/compare?a=${encodeURIComponent(state.result.original_session_id)}&b=${encodeURIComponent(state.result.new_session_id)}${dbParam ? `&db=${encodeURIComponent(dbParam)}` : ''}`
+    : null;
+  return h('div', {
+    'aria-modal': 'true',
+    className: 'fixed inset-0 z-50 flex items-center justify-center p-4',
+    'data-replay-modal': 'open',
+    role: 'dialog'
+  }, [
+    h('button', {
+      'aria-label': t.replayCancel,
+      className: 'absolute inset-0 h-full w-full bg-slate-950/50 backdrop-blur-sm',
+      onClick: state.running ? () => {} : onClose,
+      tabIndex: -1,
+      type: 'button'
+    }),
+    h('div', { className: 'relative w-full max-w-xl rounded-3xl bg-surface p-lg shadow-2xl' }, [
+      h('h3', { className: 'text-h3 font-h3 tracking-tight' }, t.replayModalTitle),
+      h('p', { className: 'mt-1 text-sm text-on-surface-variant' }, t.replayModalBody),
+      h('div', { className: 'mt-md rounded-xl border border-outline-variant/30 bg-white/60 p-md text-xs' }, [
+        h('div', { className: 'flex justify-between' }, [
+          h('span', { className: 'text-outline' }, 'session'),
+          h('span', { className: 'font-mono' }, `#${session?.session_id?.slice(0, 18) ?? '—'}`)
+        ]),
+        h('div', { className: 'mt-1 flex justify-between' }, [
+          h('span', { className: 'text-outline' }, 'framework'),
+          h('span', { className: 'font-mono' }, session?.framework ?? '—')
+        ])
+      ]),
+      h('div', { className: 'mt-md space-y-2' }, [
+        h('label', { className: 'block text-xs' }, [
+          h('span', { className: 'block text-outline mb-1' }, t.replayModel),
+          h('input', {
+            className: 'w-full rounded-lg border border-outline-variant/40 bg-white px-3 py-1.5 text-sm font-mono',
+            disabled: state.running,
+            onChange: (e) => onChange({ model: e.target.value }),
+            placeholder: 'claude-sonnet-4-6',
+            type: 'text',
+            value: state.model
+          })
+        ]),
+        h('label', { className: 'flex items-center gap-2 text-xs' }, [
+          h('input', {
+            checked: state.inplace,
+            disabled: state.running,
+            onChange: (e) => onChange({ inplace: e.target.checked }),
+            type: 'checkbox'
+          }),
+          h('span', null, t.replayInplace)
+        ]),
+        state.inplace ? h('p', { className: 'rounded-xl bg-rose-50 px-2 py-1 text-[11px] text-rose-700' }, t.replayInplaceWarn) : null
+      ]),
+      state.phases.length > 0 ? h('div', { className: 'mt-md space-y-1 text-xs', 'data-replay-phases': 'true' },
+        state.phases.map((entry, idx) => h('div', {
+          className: 'flex justify-between rounded-lg bg-surface-container-low/60 px-2 py-1',
+          key: idx
+        }, [
+          h('span', { className: 'font-mono text-outline' }, entry.label),
+          entry.detail ? h('span', { className: 'font-mono text-on-surface text-[10px] truncate max-w-[60%]' }, entry.detail) : null
+        ]))
+      ) : null,
+      state.error ? h('p', { className: 'mt-3 rounded-xl bg-error-container/30 p-3 text-sm text-error' }, `${t.replayError}: ${state.error}`) : null,
+      state.result ? h('div', { className: 'mt-3 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800' }, [
+        h('p', { key: 'm' }, `new_session: ${state.result.new_session_id}  ·  +${state.result.inserted_events} events`),
+        h('a', { className: 'mt-1 inline-flex font-semibold text-primary hover:underline', href: compareHref, key: 'a' }, t.replayDoneCta)
+      ]) : null,
+      h('div', { className: 'mt-md flex justify-end gap-2' }, [
+        h('button', {
+          className: 'rounded-xl border border-outline-variant/40 bg-white px-4 py-2 text-sm hover:border-primary/40',
+          disabled: state.running,
+          onClick: onClose,
+          type: 'button'
+        }, t.replayCancel),
+        !state.result ? h('button', {
+          className: 'rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-on-primary hover:opacity-90 disabled:opacity-50',
+          'data-action': 'start-replay',
+          disabled: state.running,
+          onClick: onStart,
+          type: 'button'
+        }, state.running ? t.replayRunning : t.replayStartButton) : null
+      ])
+    ])
+  ]);
+}
+
 export function AgentTraceExplorer({ initialSessions = [], initialEvents = [], initialLang = 'zh', initialSelectedAgent = null, initialSelectedEventId = null, initialSelectedSessionId = null }) {
   const [lang, setLangState] = useState(() => normalizeLang(initialLang));
   const t = traceCopy[lang];
@@ -2347,6 +2480,7 @@ export function AgentTraceExplorer({ initialSessions = [], initialEvents = [], i
   const [selectedEventId, setSelectedEventId] = useState(initialSelectedEventId ?? firstInspectableEventId(initialEvents));
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [privacyMode, setPrivacyModeState] = useState('off');
+  const [replayModal, setReplayModal] = useState({ open: false, running: false, result: null, error: null, phases: [], inplace: false, model: '' });
 
   useEffect(() => {
     const stored = getStoredLang();
@@ -2524,12 +2658,74 @@ export function AgentTraceExplorer({ initialSessions = [], initialEvents = [], i
     if (firstAction) setSelectedEventId(firstAction.event_id);
   }
 
+  const isReplayable = selectedSession && (selectedSession.framework === 'claude_code' || selectedSession.framework === 'codex');
+  const openReplayModal = () => setReplayModal((prev) => ({ ...prev, open: true, running: false, result: null, error: null, phases: [] }));
+  const closeReplayModal = () => setReplayModal((prev) => ({ ...prev, open: false, running: false }));
+  const updateReplayModal = (patch) => setReplayModal((prev) => ({ ...prev, ...patch }));
+
+  const startReplay = async () => {
+    if (!selectedSession) return;
+    setReplayModal((prev) => ({ ...prev, running: true, error: null, phases: [{ label: t.replayPhaseStart, detail: '' }] }));
+    try {
+      const url = `/api/sessions/${encodeURIComponent(selectedSession.session_id)}/replay`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: replayModal.model?.trim() || null,
+          inplace: Boolean(replayModal.inplace)
+        })
+      });
+      if (!response.ok || !response.body) {
+        const text = await response.text();
+        setReplayModal((prev) => ({ ...prev, running: false, error: text || 'replay failed' }));
+        return;
+      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let idx;
+        while ((idx = buffer.indexOf('\n')) !== -1) {
+          const raw = buffer.slice(0, idx).trim();
+          buffer = buffer.slice(idx + 1);
+          if (!raw) continue;
+          let evt; try { evt = JSON.parse(raw); } catch { continue; }
+          if (evt.type === 'progress') {
+            const labelKey = REPLAY_PHASE_LABELS[evt.phase] || 'replayPhaseStart';
+            const detail = evt.session_file_path || evt.cwd || evt.new_session_id || (evt.duration_ms ? `${evt.duration_ms}ms` : '');
+            setReplayModal((prev) => ({ ...prev, phases: [...prev.phases, { label: t[labelKey] || evt.phase, detail: String(detail || '') }] }));
+          } else if (evt.type === 'done') {
+            setReplayModal((prev) => ({ ...prev, running: false, result: evt.result }));
+          } else if (evt.type === 'error') {
+            setReplayModal((prev) => ({ ...prev, running: false, error: evt.message }));
+          }
+        }
+      }
+    } catch (error) {
+      setReplayModal((prev) => ({ ...prev, running: false, error: error?.message ?? 'fetch failed' }));
+    }
+  };
+
   const traceActions = selectedSession
     ? h('div', { className: 'flex flex-wrap gap-3' }, [
         h('a', {
           className: 'flex items-center gap-2 rounded-xl bg-surface-container-highest px-4 py-2 font-semibold text-on-surface transition-all hover:bg-surface-container-high',
-          href: `/api/sessions/${encodeURIComponent(selectedSession.session_id)}/events`
-        }, [h(MaterialIcon, { className: 'text-[20px]', name: 'download' }), t.exportJson])
+          href: `/api/sessions/${encodeURIComponent(selectedSession.session_id)}/events`,
+          key: 'export'
+        }, [h(MaterialIcon, { className: 'text-[20px]', name: 'download' }), t.exportJson]),
+        h('button', {
+          className: 'flex items-center gap-2 rounded-xl bg-primary px-4 py-2 font-semibold text-on-primary transition-all hover:opacity-90 disabled:opacity-40',
+          'data-action': 'open-replay-modal',
+          disabled: !isReplayable,
+          key: 'replay',
+          onClick: openReplayModal,
+          title: isReplayable ? t.replayCta : t.replayUnavailable,
+          type: 'button'
+        }, [h(MaterialIcon, { className: 'text-[20px]', name: 'replay' }), t.replayCta])
       ])
     : null;
 
@@ -2603,7 +2799,16 @@ export function AgentTraceExplorer({ initialSessions = [], initialEvents = [], i
               sessions: allSessionsSorted,
               t
             })
-          : null
+          : null,
+        h(ReplayModal, {
+          key: 'replay-modal',
+          onChange: updateReplayModal,
+          onClose: closeReplayModal,
+          onStart: startReplay,
+          session: selectedSession,
+          state: replayModal,
+          t
+        })
       ])
     ])
   ]);

@@ -63,6 +63,7 @@ Usage:
   runq readiness --db <path>
   runq sessions --db <path>
   runq export <session_id> --db <path>
+  runq replay <session_id> [--db <path>] [--model <id>] [--inplace] [--timeout <seconds>]
   runq accept-recommendation <session_id> <recommendation_id> [--note <text>] --db <path>
   runq dismiss-recommendation <session_id> <recommendation_id> [--note <text>] --db <path>
 `);
@@ -226,6 +227,59 @@ export function main(argv = process.argv.slice(2)) {
       recommendations: recommendRunImprovements(events)
     }, null, 2));
     return 0;
+  }
+
+  if (command === 'replay') {
+    const [sessionId] = args;
+    if (!sessionId) {
+      console.error('Usage: runq replay <session_id> [--db <path>] [--model <id>] [--inplace] [--timeout <seconds>]');
+      return 1;
+    }
+    const model = parseOption(argv, '--model', null);
+    const inplace = argv.includes('--inplace');
+    const timeoutSec = parseOption(argv, '--timeout', null);
+    const timeoutMs = timeoutSec ? Number(timeoutSec) * 1000 : undefined;
+    const onProgress = (event) => {
+      // Pretty-print key milestones; ignore filler events.
+      switch (event.phase) {
+        case 'loaded':
+          console.log(`  framework  : ${event.framework}`);
+          console.log(`  workspace  : ${event.workspace_dir ?? '(unknown)'}`);
+          console.log(`  prompt_len : ${event.prompt_length}`);
+          console.log(`  orig model : ${event.original_model ?? '—'}`);
+          break;
+        case 'sandbox-ready':
+          console.log(`  sandbox    : ${event.sandbox ? event.cwd : '(inplace — using original cwd)'}`);
+          break;
+        case 'spawning':
+          console.log(`  spawning   : ${event.framework}${event.model ? ` (model override: ${event.model})` : ''}…`);
+          break;
+        case 'spawn-finished':
+          console.log(`  agent exit : ${event.exit_code} (${event.duration_ms}ms)`);
+          console.log(`  transcript : ${event.session_file_path ?? '(none)'}`);
+          break;
+        case 'importing':
+          console.log(`  importing  : ${event.transcript_path}`);
+          break;
+        case 'done':
+          console.log(`  imported   : ${event.inserted_events ?? 0} events`);
+          console.log(`  new id     : ${event.new_session_id}`);
+          console.log(`  open       : ${event.compare_url}`);
+          break;
+        default:
+          break;
+      }
+    };
+    console.log(`Replaying ${sessionId}…`);
+    return import('./replay.js').then(async ({ runReplay }) => {
+      try {
+        await runReplay(sessionId, { dbPath, model, inplace, timeoutMs, onProgress });
+        return 0;
+      } catch (error) {
+        console.error('replay failed:', error.message);
+        return 2;
+      }
+    });
   }
 
   console.error(`Unknown command: ${command}`);
